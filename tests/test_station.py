@@ -103,3 +103,25 @@ async def test_mode_bar_and_lightning_power_only(tmp_path):
         await pilot.pause()
         assert app.pending[0]["label_line1"] == "Lightning PWR ONLY" and app.pending[0]["label_line2"] == "2.4A"
         await pilot.press("q")
+
+
+def test_no_link_wait_holds_a_no_link_verdict_for_the_settle_time(tmp_path):
+    """A port with no data link is not reported until that state has stood for NO_LINK_SETTLE_S; a linked port is reported at once."""
+    app = CableStation(make_settings(tmp_path), start_capture=False)
+    sig = ("nothing", ("none", "no link"), None)
+    assert app.no_link_wait("P1", sig, "none", 1000.0) == app.NO_LINK_SETTLE_S
+    assert app.no_link_wait("P1", sig, "none", 1003.5) == app.NO_LINK_SETTLE_S - 4   # 4.5 s left, shown as whole seconds
+    assert app.no_link_wait("P1", sig, "none", 1000.0 + app.NO_LINK_SETTLE_S) is None
+    assert app.no_link_wait("P2", ("Sabrent", ("usb10", "10G"), None), "usb10", 1000.0) is None
+    app.mac_first = {}   # what set_mode does when the mode changes: the timers start over
+    assert app.no_link_wait("P1", sig, "none", 2000.0) == app.NO_LINK_SETTLE_S
+
+
+def test_correction_for_flags_a_port_that_changes_soon_after_a_print(tmp_path):
+    app = CableStation(make_settings(tmp_path), start_capture=False)
+    assert app.correction_for("P1", "USB4 40G", 100.0) is None
+    app.last_print = ("P1", "C9", "PWR ONLY · no data", 100.0)
+    assert app.correction_for("P1", "USB4 40G", 130.0) == ("C9", "PWR ONLY · no data", 30)
+    assert app.correction_for("P1", "PWR ONLY · no data", 130.0) is None       # same label: nothing to correct
+    assert app.correction_for("P2", "USB4 40G", 130.0) is None                 # another port
+    assert app.correction_for("P1", "USB4 40G", 100.0 + app.CORRECTION_WINDOW_S) is None

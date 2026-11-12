@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1 (2026-11-12)
+
+- Flag: the drawn Thunderbolt bolt is clamped to the text's ink height, so no ink leaves the band the printer can reach after its vertical offset.
+- Station (drive and dock modes): a port with no data link is not called power only until that state has stood for 8 s; meanwhile the main box says NO DATA YET with a countdown, since links train within a few seconds.
+- Station: when a port reports a different label within 2 minutes of printing a cable from that port, the main box shows a CORRECTION? notice naming the printed id, so the wrong flag can be fixed with w and reprinted.
+
 ## 0.1.0 (2026-11-12)
 
 First release. Merges two earlier codebases into one package: a Mac-side reader of cable e-markers through the port registry, and a Textual station around the POWER-Z KM003C tester.

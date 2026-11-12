@@ -20,6 +20,7 @@ import asyncio
 import datetime
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from rich.text import Text
@@ -82,6 +83,8 @@ class Printer:
 
 class CableStation(App):
     TITLE = "Cable station · POWER-Z KM003C · BETA, untested"
+    NO_LINK_SETTLE_S = 8        # a "no link" verdict needs this long without a link: links train within a few seconds
+    CORRECTION_WINDOW_S = 120   # a port that changes its reading this soon after a print probably still holds the printed cable
     CSS = """
     #mode { height: 1; padding: 0 2; background: $accent; color: $text; text-style: bold; }
     #reading { height: auto; max-height: 12; padding: 0 1; border: round $accent; }
@@ -116,6 +119,8 @@ class CableStation(App):
         self.pending = None      # (record, time, runs, capture lines)
         self.mode = "tester"
         self.mac_seen = {}
+        self.mac_first = {}      # (port, signature) -> when that no-link state was first seen (the settle timer)
+        self.last_print = None   # (port, cable id, label line 1, time) of the last print that came from a Mac port
         self.last_key, self.last_mono = None, 0.0
         self.proc = None
         self.previewed = False
@@ -325,6 +330,8 @@ class CableStation(App):
         if lines:
             (self.s.captures_dir / f"emarker-{cid}.log").write_text("".join(lines))
         self.set_status(f"[{cid}] PRINTED {r['label_line1']} / {r['label_line2']} · #{cid[1:]}   {self.printer.print(cid, r['label_line1'], r['label_line2'], r.get('label_note', ''))}")
+        if r.get("port") is not None:
+            self.last_print = (r["port"], cid, r["label_line1"], time.time())
         self._finish(cid, f"printed as {cid}")
 
     def action_reprint(self) -> None:
@@ -352,6 +359,7 @@ class CableStation(App):
     def set_mode(self, mode: str) -> None:
         self.mode = mode
         self.mac_seen = {}
+        self.mac_first = {}
         if mode == "lightning" and "Lightning" not in self.connector:
             self.connector = "Lightning"
         if mode != "lightning" and "Lightning" in self.connector:
@@ -423,7 +431,6 @@ class CableStation(App):
     def mac_watch(self) -> None:
         """Drive and dock modes: poll the Mac's ports; a new or changed cable on the watched partner becomes the pending reading.
         Lightning mode: poll the USB tree for an iPhone, iPad or iPod; its appearance is the reading."""
-        import time
 
         def nap(seconds):
             end = time.time() + seconds
@@ -450,16 +457,43 @@ class CableStation(App):
                 self.call_from_thread(self.set_status, f"Mac read failed: {e}")
                 nap(3)
                 continue
+            now = time.time()
             for p in ports.values():
                 if not self._watched(p):
                     self.mac_seen.pop(p.port, None)
+                    self.mac_first.pop(p.port, None)
                     continue
                 sig = (p.devices(), p.link(), tuple(p.emarker.raw_vdos) if p.emarker else None)
-                if self.mac_seen.get(p.port) != sig:
-                    self.mac_seen[p.port] = sig
-                    self.call_from_thread(self.reading_from_port, p)
+                if self.mac_seen.get(p.port) == sig:
+                    continue
+                left = self.no_link_wait(p.port, sig, p.link()[0], now)
+                if left is not None:
+                    self.call_from_thread(self.query_one("#reading", Static).update,
+                                          Text(f"port {p.port}: connected, NO DATA YET, please wait {left} s for the link to train before it is called power only", style="bold yellow"))
+                    self.call_from_thread(self.set_status, f"port {p.port}: no data link yet; waiting {left} s")
+                    continue
+                self.mac_seen[p.port] = sig
+                self.call_from_thread(self.reading_from_port, p)
             nap(2)
         self._mac_watching = False
+
+    def no_link_wait(self, port, sig, link_cls: str, now: float):
+        """A port with no data link may still be training. The first time a (port, signature) with no link is seen,
+        start its timer; until NO_LINK_SETTLE_S has passed, answer the whole seconds still to wait. None means report it."""
+        if link_cls != "none":
+            return None
+        first = self.mac_first.setdefault((port, sig), now)
+        if now - first < self.NO_LINK_SETTLE_S:
+            return int(self.NO_LINK_SETTLE_S - (now - first))
+        return None
+
+    def correction_for(self, port, label_line1: str, now: float):
+        """The last print came from this port within CORRECTION_WINDOW_S and the port now reads a different label:
+        return (cable id, old label, seconds since the print); the printed flag may be wrong. None otherwise."""
+        lp = self.last_print
+        if lp and lp[0] == port and now - lp[3] < self.CORRECTION_WINDOW_S and lp[2] != label_line1:
+            return lp[1], lp[2], int(now - lp[3])
+        return None
 
     def reading_from_port(self, p: mac_reader.PortState) -> None:
         link_cls, link_txt = p.link()
@@ -488,8 +522,17 @@ class CableStation(App):
                    "current": "3A", "epr": False, "active": False, "vendor_id": "", "product_id": "", "cable_vdo": "", "product_type": "chipless cable",
                    "speed": t, "source": "mac", "data_test": f"Mac read on port {p.port}: no chip answered on SOP'; link trained {link_txt} with {p.devices()}"}
         runs = self.pending[2] + 1 if (self.pending and self.pending[0].get("data_test") == rec["data_test"]) else 1
+        rec["port"] = p.port
         self.pending = (rec, f"{datetime.datetime.now():%H:%M:%S}", runs, [])
         self.show_pending()
+        corr = self.correction_for(p.port, rec["label_line1"], time.time())
+        if corr:
+            cid, old, ago = corr
+            self.query_one("#reading", Static).update(Text(
+                f"CORRECTION? {cid} printed {ago} s ago from this port as '{old}'; the port now reads '{rec['label_line1']}'. "
+                f"If it is the same cable: highlight {cid} and press w twice to fix it and reprint.", style="bold red"))
+            self.set_status(f"port {p.port} changed after {cid} was printed: w to correct it, or Enter if this is a different cable")
+            return
         self.set_status(f"{self.mode} mode, port {p.port}: {rec['label_line1']} / {rec['label_line2']}. Enter prints, w writes into the highlighted row, s discards.")
 
     # ----- the other keys -----
