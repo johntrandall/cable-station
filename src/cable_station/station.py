@@ -1,0 +1,492 @@
+"""The cable station: a small full-screen app around the tester.
+
+One table, aligned so cables compare: the pending reading is the first row (ID "new?"), every recorded
+cable follows, and rows whose e-marker record matches the pending reading are highlighted. Keys:
+  Enter   preview, then print the pending reading with a NEW number and write its note
+  r       reprint the highlighted row's number (no new note)
+  1 2 3   mode: 1 tester (readings from the POWER-Z capture), 2 drive, 3 dock (the Mac reads the cable)
+  n       stage the seated cable as chipless, untested (Enter prints it)
+  w       write the pending reading into the highlighted row (a retest keeps its number); w twice
+  x       decommission the highlighted cable; x twice
+  u       undo a decommission
+  s       discard the pending reading
+  q       quit (the capture stops with the app)
+The records are Markdown notes (records.py) with an Obsidian Base as their table.
+"""
+from __future__ import annotations
+
+import asyncio
+import datetime
+import subprocess
+import sys
+from pathlib import Path
+
+from rich.text import Text
+from textual import work
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.widgets import DataTable, Footer, Static
+
+from . import flag, mac_reader, records
+from . import tester_capture as em
+from .config import Settings
+
+COLS = ("ID", "data", "power", "A", "EPR", "active", "chip", "vendor", "product", "VDO", "tested", "load", "status")
+
+
+def yn(v):
+    return "yes" if v is True else ("no" if v is False else str(v))
+
+
+def tier(label: str) -> str:
+    """The speed tier of a data label, for the loose 'same label' match: 'no eMarker · USB 2.0 480M' and
+    'USB 2.0 480M link' are the same tier."""
+    return label.replace("no eMarker · ", "").replace(" link", "").replace("PWR ONLY · no data", "no data").strip()
+
+
+class Printer:
+    """Renders flags into the state dir and prints them with ptouch-label."""
+
+    def __init__(self, settings: Settings):
+        self.s = settings
+
+    def render(self, cid: str, line1: str, line2: str, note: str = "") -> tuple[Path, str]:
+        """Render the flag PNG and return (path, one-line description of its size). A note prints after the power text."""
+        png = self.s.previews_dir / f"{cid}.png"
+        png.parent.mkdir(parents=True, exist_ok=True)
+        text2 = f"{line2} · {note}" if note else line2
+        desc = flag.render(str(png), line1, text2, tape=self.s.tape_mm, cable_id=cid, vertical_offset_mm=self.s.vertical_offset_mm)
+        return png, desc
+
+    def print(self, cid: str, line1: str, line2: str, note: str = "", dry_run: bool = False) -> str:
+        png, _ = self.render(cid, line1, line2, note)
+        cmd = ["ptouch-label", "--model", self.s.printer_model, "--for", "cable", "--image", str(png)]
+        if dry_run:
+            cmd.append("--dry-run")
+        try:
+            out = subprocess.run(cmd, capture_output=True, text=True)
+        except FileNotFoundError:
+            return f"ptouch-label not found on PATH; flag rendered at {png}"
+        text = out.stdout + out.stderr
+        cut = [l for l in text.splitlines() if l.startswith("Cuts:") or "Sent to" in l or "rror" in l or "scaled" in l] or [out.stderr.strip()[-120:]]
+        return " · ".join(cut)
+
+    @staticmethod
+    def open_preview(png: Path) -> None:
+        if sys.platform == "darwin":
+            subprocess.run(["open", "-g", "-a", "Preview", str(png)])
+        else:
+            subprocess.Popen(["xdg-open", str(png)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+class CableStation(App):
+    TITLE = "Cable station · POWER-Z KM003C"
+    CSS = """
+    #reading { height: auto; max-height: 12; padding: 0 1; border: round $accent; }
+    #status { height: 1; padding: 0 2; color: $text-muted; }
+    DataTable { height: 1fr; }
+    """
+    BINDINGS = [
+        Binding("enter", "print_new", "Enter: print pending as NEW #, or the highlighted row", priority=True),
+        Binding("r", "reprint", "Reprint highlighted row (↑↓ to choose)"),
+        Binding("1", "mode_tester", "1 tester"),
+        Binding("2", "mode_drive", "2 drive"),
+        Binding("3", "mode_dock", "3 dock"),
+        Binding("n", "no_emarker", "No chip, untested: stage"),
+        Binding("w", "write_into", "Write pending into highlighted row (w twice)"),
+        Binding("x", "decommission", "Decommission highlighted (x twice)"),
+        Binding("u", "reactivate", "Undo decommission", show=False),
+        Binding("s", "discard", "Discard"),
+        Binding("q", "quit", "Quit"),
+        Binding("ctrl+c", "quit", "Quit", show=False, priority=True),
+    ]
+
+    def __init__(self, settings: Settings, start_capture: bool = True):
+        super().__init__()
+        self.s = settings
+        self.db = records.Store(settings.data_dir)
+        self.printer = Printer(settings)
+        self.hours, self.connector = settings.capture_hours, settings.connector
+        self.start_capture = start_capture
+        self.pending = None      # (record, time, runs, capture lines)
+        self.mode = "tester"
+        self.mac_seen = {}
+        self.last_key, self.last_mono = None, 0.0
+        self.proc = None
+        self.previewed = False
+        self.confirm_x = None
+        self.confirm_w = None
+        self._mac_watching = False
+        self.settings = settings
+        drive = ", ".join(settings.partners.get("drive", [])) or "any device"
+        dock = ", ".join(settings.partners.get("dock", [])) or "any device"
+        self.MODES = {"tester": "TESTER: run the eMarker module on the POWER-Z; readings arrive from its capture",
+                      "drive": f"DRIVE: plug each cable between this Mac and a drive ({drive}); the Mac reads it",
+                      "dock": f"DOCK: plug each cable between this Mac and the dock ({dock}); the Mac reads it"}
+
+    # ----- layout -----
+
+    def compose(self) -> ComposeResult:
+        yield Static("waiting for a reading · seat a cable · tester: Application › Modules › USB-C eMarker · rotate the plug if asked", id="reading")
+        yield Static("", id="status")
+        yield DataTable(id="cables", cursor_type="row", zebra_stripes=True)
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self.query_one(DataTable).add_columns(*COLS)
+        self.s.ensure_dirs()
+        self.db.ensure_base()
+        self.refresh_table()
+        if self.start_capture:
+            self.set_status("capture starting")
+            self.capture()
+        else:
+            self.set_status("capture not started")
+
+    def log_line(self, line: str) -> None:
+        try:
+            with open(self.s.log_path, "a") as f:
+                f.write(f"[{datetime.datetime.now():%H:%M:%S}] {line.rstrip()}\n")
+        except OSError:
+            pass
+
+    def set_status(self, text: str) -> None:
+        self.query_one("#status", Static).update(f"{datetime.datetime.now():%H:%M:%S}  {text}")
+        self.log_line(text)
+        self.update_title()
+
+    def update_title(self) -> None:
+        n = len(self.db.read_all())
+        state = "reading pending" if self.pending else ("tester connected" if (self.proc and self.proc.returncode is None) else "tester absent")
+        self.sub_title = f"{n} cables · mode {self.mode} · {state}"
+
+    def refresh_table(self) -> None:
+        t = self.query_one(DataTable)
+        keep = None
+        if t.row_count and t.cursor_row < t.row_count:
+            keep = str(t.get_row_at(t.cursor_row)[0]).split()[0]
+        t.clear()
+        rows = self.db.read_all()
+        pend = self.pending[0] if self.pending else None
+        matches = set(records.same_record(rows, pend)) if (pend and pend.get("cable_vdo")) else set()
+        # chipless (or unread) readings have no identity: a weaker "same label" match, shown in cyan, not green
+        label_matches = set()
+        if pend and not pend.get("cable_vdo"):
+            label_matches = {r["id"] for r in rows if not r["cable_vdo"] and tier(r["data_label"]) == tier(pend["label_line1"])}
+        if pend:
+            nxt = self.db.next_id(rows)
+            cells = [f"new? (#{nxt[1:]})", pend["label_line1"], pend["label_line2"], (pend["current"] or "")[:-1], yn(pend["epr"]), yn(pend["active"]),
+                     ("yes" if pend["cable_vdo"] else ("unread" if pend.get("product_type", "").startswith("e-marked") else "no")), pend["vendor_id"], pend["product_id"], pend["cable_vdo"], datetime.date.today().isoformat(), "", ""]
+            t.add_row(*[Text(c, style="bold yellow") for c in cells], key="__pending__")
+        for r in rows:
+            chip = "unread" if (r["emarker"] is True and r.get("emarker_read") is False) else yn(r["emarker"])
+            cells = [r["id"], r["data_label"], r["power_label"].split(" · #")[0], r["current_a"] or "?", yn(r["epr"]) if r["epr"] != "" else "?", yn(r["active"]), chip,
+                     r["vendor"], r["product"], r["cable_vdo"], r["tested"], r["load_test"]]
+            cells.append("RETIRED " + (r.get("decommissioned") or "") if r.get("status") == "decommissioned" else "")
+            if r.get("status") == "decommissioned":
+                cells = [Text(str(c), style="dim strike") for c in cells]
+            elif r["id"] in matches:
+                cells = [Text(c, style="bold green") for c in cells]
+                cells[0] = Text(f"{r['id']} =", style="bold green")
+            elif r["id"] in label_matches:
+                cells = [Text(str(c), style="bold cyan") for c in cells]
+                cells[0] = Text(f"{r['id']} ~", style="bold cyan")
+            t.add_row(*cells, key=r["id"])
+        ids = [r["id"] for r in rows]
+        if not matches and label_matches:
+            t.move_cursor(row=(1 if pend else 0) + ids.index(sorted(label_matches, key=lambda x: int(x[1:]))[-1]))
+        elif matches:
+            t.move_cursor(row=(1 if pend else 0) + ids.index(sorted(matches, key=lambda x: int(x[1:]))[-1]))
+        elif pend:
+            t.move_cursor(row=0)
+        elif keep in ids:
+            t.move_cursor(row=ids.index(keep))   # the highlight stays on the row the user had
+
+    def show_pending(self) -> None:
+        self.update_title()
+        r, when, runs, _ = self.pending
+        rows = self.db.read_all()
+        same = records.same_record(rows, r) if r.get("cable_vdo") else []
+        if not same and not r.get("cable_vdo"):
+            same_label = [x["id"] for x in rows if not x["cable_vdo"] and tier(x["data_label"]) == tier(r["label_line1"])]
+            if same_label:
+                self.query_one("#reading", Static).update(Text(f"{when}  run {runs}:  {r['label_line1']}  /  {r['label_line2']}   SAME TIER as {', '.join(same_label)} (cyan; chipless cables have no identity to compare): same cable → r or s · another → Enter", style="bold"))
+                self.refresh_table()
+                return
+        hint = f"   SAME RECORD as {', '.join(same)} (highlighted): same cable again → s or r · another identical cable → Enter" if same else "   new record → Enter prints it"
+        t = Text()
+        t.append(f"{when}  run {runs}:  ", style="bold")
+        t.append(f"{r['label_line1']}  /  {r['label_line2']}", style="bold yellow")
+        t.append(hint)
+        self.query_one("#reading", Static).update(t)
+        self.refresh_table()
+
+    # ----- the tester path -----
+
+    @work(exclusive=True)
+    async def capture(self) -> None:
+        cmd = [self.s.km003c, "pd", "capture", "--raw", "--duration", str(int(self.hours * 3600))]
+        try:
+            self.proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+        except FileNotFoundError:
+            self.set_status(f"km003c not found ({self.s.km003c}): tester mode is off; modes 2 and 3 still work. See `cable-station doctor`.")
+            return
+        self.set_status(f"capture running for {self.hours:g} h")
+        since = []
+        loop = asyncio.get_running_loop()
+        while True:
+            raw = await self.proc.stdout.readline()
+            if not raw:
+                self.set_status("tester gone: waiting for it to come back on USB (plug its HID port into this computer)")
+                while not mac_reader.tester_present():
+                    await asyncio.sleep(3)
+                await asyncio.sleep(2)
+                self.proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+                self.set_status("tester back: capture running again")
+                since = []
+                continue
+            line = raw.decode(errors="replace")
+            since.append(line)
+            if "** CONNECT **" in line:
+                since = [line]
+                continue
+            if "RAW[" in line or line.startswith("      "):
+                res = em.decode("".join(since[-40:]))
+                if res and res[-1].get("cable_vdo"):
+                    r = res[-1]
+                    k = (r["cable_vdo"], r["vendor_id"], r["product_id"])
+                    now = loop.time()
+                    if k == self.last_key and now - self.last_mono < 3:
+                        continue
+                    if self.mode != "tester":
+                        continue
+                    runs = self.pending[2] + 1 if (self.pending and k == self.last_key) else 1
+                    self.last_key, self.last_mono = k, now
+                    self.pending = (r, f"{datetime.datetime.now():%H:%M:%S}", runs, list(since))
+                    since = []
+                    self.show_pending()
+                    self.set_status(f"reading run {runs}: {r['label_line1']} / {r['label_line2']}")
+
+    # ----- printing and recording -----
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        # Enter on a recorded row with nothing pending reprints that row; otherwise it prints the pending reading
+        if self.pending is None:
+            self.action_reprint()
+        else:
+            self.action_print_new()
+
+    def _finish(self, cid, msg: str) -> None:
+        self.pending = None
+        self.previewed = False
+        self.query_one("#reading", Static).update(f"{msg}  ·  next cable: seat it and run the eMarker module")
+        self.refresh_table()
+
+    def action_print_new(self) -> None:
+        if not self.pending:
+            self.action_reprint()
+            return
+        r, when, runs, lines = self.pending
+        cid = self.db.next_id()
+        if not self.previewed:
+            png, desc = self.printer.render(cid, r["label_line1"], r["label_line2"], r.get("label_note", ""))
+            self.printer.open_preview(png)
+            self.previewed = True
+            self.query_one("#reading", Static).update(f"PREVIEW opened: {r['label_line1']} / {r['label_line2']} · #{cid[1:]}\n  {desc}\n  Enter again = print it as {cid} · s = cancel")
+            self.set_status(f"preview of {cid}: {desc}. Enter prints, s cancels.")
+            return
+        self.previewed = False
+        if r.get("cable_vdo"):
+            row = records.from_decode(r, cid, self.connector, "cable-station (Mac read)" if r.get("source") == "mac" else "cable-station (tester)")
+            row["data_label"], row["speed"] = r["label_line1"], r["speed"]
+            if r.get("data_test"):
+                row["notes"] = r["data_test"]
+        else:
+            row = records.no_emarker_row(cid, self.connector, "")
+            row["data_label"], row["speed"] = r["label_line1"], r["speed"]
+            row["power_label"] = f"{r['label_line2']} · #{cid[1:]}"
+            row["label_note"] = r.get("label_note", "")
+            row["notes"] = f"Mac read: {r.get('data_test', '')}" if r.get("source") == "mac" else f"Data test: {r.get('data_test', '')}"
+            if r.get("source") == "mac":
+                row["emarker"], row["emarker_read"] = False, True     # the Mac asked on SOP' and nothing answered: verified chipless
+            if r.get("product_type", "").startswith("e-marked"):
+                row["emarker"], row["emarker_read"], row["active"] = True, False, bool(r.get("active"))
+                row["current_a"], row["epr"] = "", ""     # unknown until a chip read
+        self.db.write(row)
+        if lines:
+            (self.s.captures_dir / f"emarker-{cid}.log").write_text("".join(lines))
+        self.set_status(f"[{cid}] PRINTED {r['label_line1']} / {r['label_line2']} · #{cid[1:]}   {self.printer.print(cid, r['label_line1'], r['label_line2'], r.get('label_note', ''))}")
+        self._finish(cid, f"printed as {cid}")
+
+    def action_reprint(self) -> None:
+        t = self.query_one(DataTable)
+        if t.row_count == 0:
+            return
+        row = t.get_row_at(t.cursor_row)
+        cid = str(row[0]).split()[0]
+        if cid.startswith("new?"):
+            self.set_status("select a recorded row to reprint, or Enter to print the new reading")
+            return
+        line1, line2 = str(row[1]), str(row[2])
+        rec = self.db.get(cid) or {}
+        note = rec.get("label_note", "")
+        self.set_status(f"[{cid}] REPRINTED {line1} / {line2} · #{cid[1:]}   {self.printer.print(cid, line1, line2, note)}")
+        self._finish(cid, f"reprinted {cid}")
+
+    # ----- the Mac path (modes 2 and 3) -----
+
+    def set_mode(self, mode: str) -> None:
+        self.mode = mode
+        self.mac_seen = {}
+        self.query_one("#reading", Static).update(f"mode {self.MODES[mode]}  ·  seat or plug a cable; the reading appears here")
+        self.set_status(f"mode: {mode}")
+        self.update_title()
+        if mode != "tester" and not self._mac_watching:
+            if sys.platform != "darwin":
+                self.set_status("the Mac reader needs macOS (it reads ioreg); modes 2 and 3 do nothing here")
+                return
+            self._mac_watching = True
+            self.mac_watch()
+
+    def action_mode_tester(self) -> None:
+        self.set_mode("tester")
+
+    def action_mode_drive(self) -> None:
+        self.set_mode("drive")
+
+    def action_mode_dock(self) -> None:
+        self.set_mode("dock")
+
+    def _watched(self, port: mac_reader.PortState) -> bool:
+        names = (port.cio_device or "") + " " + (port.usb3_product or "") + " " + (port.usb2_product or "")
+        partners = self.s.partners.get(self.mode, ())
+        if port.connected and partners and any(k.upper() in names.upper() for k in partners):
+            return True
+        if port.connected and not partners and port.devices() != "nothing":
+            return True   # no partner names configured: any device on the far end counts
+        # a power-only (or dead-data) cable: the CC wire connected, nothing else; the drive on the far end never appears
+        return port.connected and port.transports_active == ["CC"] and port.devices() == "nothing"
+
+    @work(thread=True)
+    def mac_watch(self) -> None:
+        """Drive and dock modes: poll the Mac's ports; a new or changed cable on the watched partner becomes the pending reading."""
+        import time
+        while self.mode != "tester":
+            try:
+                ports = mac_reader.read_ports()
+            except Exception as e:
+                self.call_from_thread(self.set_status, f"Mac read failed: {e}")
+                time.sleep(3)
+                continue
+            for p in ports.values():
+                if not self._watched(p):
+                    self.mac_seen.pop(p.port, None)
+                    continue
+                sig = (p.devices(), p.link(), tuple(p.emarker.raw_vdos) if p.emarker else None)
+                if self.mac_seen.get(p.port) != sig:
+                    self.mac_seen[p.port] = sig
+                    self.call_from_thread(self.reading_from_port, p)
+            time.sleep(2)
+        self._mac_watching = False
+
+    def reading_from_port(self, p: mac_reader.PortState) -> None:
+        link_cls, link_txt = p.link()
+        e = p.emarker
+        if e:
+            line1, line2 = e.label_lines()
+            if link_cls == "tb40" and e.speed_code < 3:
+                line1 = "TB 40G · USB 3.2 10G" + (" Active" if e.kind == "active" else "")   # Thunderbolt 3 cables carry 40G by alt mode while the USB code says 10G/20G
+            rec = {"label_line1": line1, "label_line2": line2, "label_note": "", "current": f"{e.current_a}A", "epr": e.epr, "active": e.kind == "active",
+                   "vendor_id": f"0x{e.vendor_id:04X}", "product_id": f"0x{e.product_id:04X}", "cable_vdo": f"0x{e.cable_vdo:08X}",
+                   "product_type": f"{e.kind} cable", "speed": line1, "source": "mac",
+                   "data_test": f"Mac read on port {p.port}: chip answered on SOP' ({', '.join(e.raw_vdos)}); link trained {link_txt} with {p.devices()}"}
+        else:
+            t = {"usb2": "USB 2.0 480M", "usb5": "USB 3.2 5G", "usb10": "USB 3.2 10G", "tb20": "USB4 20G", "tb40": "USB4 40G"}.get(link_cls, link_txt)
+            rec = {"label_line1": f"no eMarker · {t}" if link_cls != "none" else "PWR ONLY · no data", "label_line2": "60W 3A", "label_note": "" if link_cls != "none" else "confirm the drive is on the far end",
+                   "current": "3A", "epr": False, "active": False, "vendor_id": "", "product_id": "", "cable_vdo": "", "product_type": "chipless cable",
+                   "speed": t, "source": "mac", "data_test": f"Mac read on port {p.port}: no chip answered on SOP'; link trained {link_txt} with {p.devices()}"}
+        runs = self.pending[2] + 1 if (self.pending and self.pending[0].get("data_test") == rec["data_test"]) else 1
+        self.pending = (rec, f"{datetime.datetime.now():%H:%M:%S}", runs, [])
+        self.show_pending()
+        self.set_status(f"{self.mode} mode, port {p.port}: {rec['label_line1']} / {rec['label_line2']}. Enter prints, w writes into the highlighted row, s discards.")
+
+    # ----- the other keys -----
+
+    def on_key(self, event) -> None:
+        if event.key != "x":
+            self.confirm_x = None
+        if event.key != "w":
+            self.confirm_w = None
+
+    def action_no_emarker(self) -> None:
+        """Stage a chipless, untested cable as the pending reading; Enter prints it (never prints by itself)."""
+        rec = {"label_line1": "no eMarker · USB 2.0 480M", "label_line2": "60W 3A", "current": "3A", "epr": False, "active": False,
+               "vendor_id": "", "product_id": "", "cable_vdo": "", "product_type": "chipless cable", "speed": "480M (assumed, untested)",
+               "data_test": "none: recorded as untested chipless"}
+        self.pending = (rec, f"{datetime.datetime.now():%H:%M:%S}", 1, [])
+        self.show_pending()
+        self.set_status("staged an untested chipless cable (480M assumed). Enter prints it, s discards.")
+
+    def _highlighted_id(self):
+        t = self.query_one(DataTable)
+        if t.row_count == 0:
+            return None
+        cid = str(t.get_row_at(t.cursor_row)[0]).split()[0]
+        return None if cid.startswith("new?") else cid
+
+    def action_decommission(self) -> None:
+        cid = self._highlighted_id()
+        if not cid:
+            self.set_status("highlight a recorded cable first (↑↓)")
+            return
+        if self.confirm_x != cid:
+            self.confirm_x = cid
+            self.set_status(f"decommission {cid} (broken or discarded)? press x again to confirm, anything else cancels")
+            return
+        self.confirm_x = None
+        self.db.set_status(cid, "decommissioned")
+        self.set_status(f"[{cid}] DECOMMISSIONED {datetime.date.today().isoformat()}; the record and number are kept")
+        self.refresh_table()
+
+    def action_reactivate(self) -> None:
+        cid = self._highlighted_id()
+        if not cid:
+            return
+        self.db.set_status(cid, "active")
+        self.set_status(f"[{cid}] back in service")
+        self.refresh_table()
+
+    def action_write_into(self) -> None:
+        """w: write the pending reading into the highlighted row (a retest keeps its number), then reprint."""
+        if not self.pending:
+            self.set_status("nothing pending to write")
+            return
+        cid = self._highlighted_id()
+        if not cid:
+            self.set_status("highlight the row to update (↑↓), then w")
+            return
+        if self.confirm_w != cid:
+            self.confirm_w = cid
+            self.set_status(f"write this reading into {cid} and reprint its flag? press w again to confirm")
+            return
+        self.confirm_w = None
+        r = self.pending[0]
+        fields = {"data_label": r["label_line1"], "power_label": r["label_line2"], "speed": r["speed"], "active": bool(r.get("active")),
+                  "label_note": r.get("label_note", ""), "tested": datetime.date.today().isoformat(), "notes": r.get("data_test", "")}
+        if r.get("cable_vdo"):
+            fields.update({"emarker": True, "emarker_read": True, "current_a": (r["current"] or "")[:-1], "epr": bool(r["epr"]),
+                           "vendor": r["vendor_id"], "product": r["product_id"], "cable_vdo": r["cable_vdo"]})
+        elif r.get("source") == "mac":
+            fields.update({"emarker": False, "emarker_read": True, "current_a": "3", "epr": False, "vendor": "", "product": "", "cable_vdo": ""})
+        self.db.update(cid, fields)
+        self.set_status(f"[{cid}] UPDATED and REPRINTED {r['label_line1']} / {r['label_line2']} · #{cid[1:]}   {self.printer.print(cid, r['label_line1'], r['label_line2'], r.get('label_note', ''))}")
+        self._finish(cid, f"{cid} updated with the new reading")
+
+    def action_discard(self) -> None:
+        self.set_status("reading discarded")
+        self._finish(None, "discarded")
+
+    async def action_quit(self) -> None:
+        if self.proc and self.proc.returncode is None:
+            self.proc.terminate()
+        self.exit()

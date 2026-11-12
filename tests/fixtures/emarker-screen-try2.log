@@ -1,0 +1,131 @@
+USB PD Negotiation Capture
+NOW: Disconnect and reconnect your USB-C load!
+Capturing for 120 seconds... (Press Ctrl+C to stop early)
+
+[2809.996s] ** DISCONNECT **
+[2815.448s] ** CONNECT **
+[2815.572s] RAW[6]: 8F 10 01 A0 00 FF 
+[2815.572s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278231041)), []))
+[2815.573s] RAW[2]: 01 01 
+[2815.573s] SOP1: Control(GoodCRC)     (ID=0, ROLE=Source/Ufp)
+[2815.575s] RAW[22]: 8F 51 41 A0 00 FF 00 00 00 18 00 00 00 00 00 00 
+                     00 00 42 40 08 00 
+[2815.575s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Source/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278231105)), [402653184, 0, 0, 540738]))
+[2815.576s] RAW[2]: 41 00 
+[2815.576s] SOP1: Control(GoodCRC)     (ID=0, ROLE=Sink/Ufp)
+[2815.577s] RAW[6]: 8F 12 02 A0 00 FF 
+[2815.577s] SOP1: Data(VendorDefined)  (ID=1, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278231042)), []))
+[2815.580s] Device status 0x96: [45, 5C, F6, 2A, 00, 96]
+[2815.580s] RAW[6]: 8F 12 02 A0 00 FF 
+[2815.580s] SOP1: Data(VendorDefined)  (ID=1, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278231042)), []))
+[2815.581s] RAW[2]: 01 03 
+[2815.581s] SOP1: Control(GoodCRC)     (ID=1, ROLE=Source/Ufp)
+[2815.582s] RAW[6]: 8F 13 82 A0 00 FF 
+[2815.582s] SOP1: Data(VendorDefined)  (ID=1, ROLE=Source/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278231170)), []))
+[2815.583s] RAW[2]: 41 02 
+[2815.583s] SOP1: Control(GoodCRC)     (ID=1, ROLE=Sink/Ufp)
+[2825.030s] ** DISCONNECT **
+[2825.204s] ** CONNECT **
+[2825.328s] RAW[6]: 8F 10 01 A0 00 FF 
+[2825.328s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278231041)), []))
+[2825.331s] Device status 0x96: [45, 73, 1C, 2B, 00, 96]
+[2825.331s] RAW[6]: 8F 10 01 A0 00 FF 
+[2825.331s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278231041)), []))
+[2825.334s] Device status 0x96: [45, 76, 1C, 2B, 00, 96]
+[2825.334s] RAW[6]: 8F 10 01 A0 00 FF 
+[2825.334s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278231041)), []))
+[2825.337s] Device status 0x96: [45, 79, 1C, 2B, 00, 96]
+[2825.361s] RAW[6]: 4F 10 01 80 00 FF 
+[2825.361s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278222849)), []))
+[2825.364s] Device status 0x96: [45, 94, 1C, 2B, 00, 96]
+[2825.364s] RAW[6]: 4F 10 01 80 00 FF 
+[2825.364s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278222849)), []))
+[2825.367s] Device status 0x96: [45, 97, 1C, 2B, 00, 96]
+[2825.367s] RAW[6]: 4F 10 01 80 00 FF 
+[2825.367s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278222849)), []))
+[2825.370s] Device status 0x96: [45, 9A, 1C, 2B, 00, 96]
+[2825.394s] RAW[6]: 4F 10 01 80 00 FF 
+[2825.394s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278222849)), []))
+[2825.397s] Device status 0x96: [45, B5, 1C, 2B, 00, 96]
+[2825.397s] RAW[6]: 4F 10 01 80 00 FF 
+[2825.397s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278222849)), []))
+[2825.400s] Device status 0x96: [45, B8, 1C, 2B, 00, 96]
+[2825.400s] RAW[6]: 4F 10 01 80 00 FF 
+[2825.400s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278222849)), []))
+[2825.403s] Device status 0x96: [45, BB, 1C, 2B, 00, 96]
+[2825.427s] RAW[6]: 4F 10 01 80 00 FF 
+[2825.427s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278222849)), []))
+[2825.430s] Device status 0x96: [45, D6, 1C, 2B, 00, 96]
+[2825.430s] RAW[6]: 4F 10 01 80 00 FF 
+[2825.430s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278222849)), []))
+[2825.433s] Device status 0x96: [45, D9, 1C, 2B, 00, 96]
+[2825.433s] RAW[6]: 4F 10 01 80 00 FF 
+[2825.433s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278222849)), []))
+[2825.436s] Device status 0x96: [45, DC, 1C, 2B, 00, 96]
+[2825.460s] RAW[6]: 4F 10 01 80 00 FF 
+[2825.460s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278222849)), []))
+[2825.463s] Device status 0x96: [45, F7, 1C, 2B, 00, 96]
+[2825.463s] RAW[6]: 4F 10 01 80 00 FF 
+[2825.463s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278222849)), []))
+[2825.466s] Device status 0x96: [45, FA, 1C, 2B, 00, 96]
+[2825.466s] RAW[6]: 4F 10 01 80 00 FF 
+[2825.466s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278222849)), []))
+[2825.469s] Device status 0x96: [45, FD, 1C, 2B, 00, 96]
+[2825.493s] RAW[6]: 4F 10 01 80 00 FF 
+[2825.493s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278222849)), []))
+[2825.496s] Device status 0x96: [45, 18, 1D, 2B, 00, 96]
+[2825.496s] RAW[6]: 4F 10 01 80 00 FF 
+[2825.496s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278222849)), []))
+[2825.499s] Device status 0x96: [45, 1B, 1D, 2B, 00, 96]
+[2825.499s] RAW[6]: 4F 10 01 80 00 FF 
+[2825.499s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278222849)), []))
+[2825.502s] Device status 0x96: [45, 1E, 1D, 2B, 00, 96]
+[2825.526s] RAW[6]: 4F 10 01 80 00 FF 
+[2825.526s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278222849)), []))
+[2825.529s] Device status 0x96: [45, 39, 1D, 2B, 00, 96]
+[2825.529s] RAW[6]: 4F 10 01 80 00 FF 
+[2825.529s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278222849)), []))
+[2825.532s] Device status 0x96: [45, 3C, 1D, 2B, 00, 96]
+[2825.532s] RAW[6]: 4F 10 01 80 00 FF 
+[2825.532s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278222849)), []))
+[2825.535s] Device status 0x96: [45, 3F, 1D, 2B, 00, 96]
+[2825.559s] RAW[6]: 4F 10 01 80 00 FF 
+[2825.559s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278222849)), []))
+[2825.562s] Device status 0x96: [45, 5A, 1D, 2B, 00, 96]
+[2825.562s] RAW[6]: 4F 10 01 80 00 FF 
+[2825.562s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278222849)), []))
+[2825.565s] Device status 0x96: [45, 5D, 1D, 2B, 00, 96]
+[2825.565s] RAW[6]: 4F 10 01 80 00 FF 
+[2825.565s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278222849)), []))
+[2825.568s] Device status 0x96: [45, 60, 1D, 2B, 00, 96]
+
+Capture complete.

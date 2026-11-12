@@ -1,0 +1,55 @@
+[project]
+name = "cable-station"
+version = "0.1.0"
+description = "Read USB-C cable e-markers with a POWER-Z KM003C tester or a Mac, keep one Markdown note per cable, and print a wrap-flag label for each"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "John Randall", email = "john@johnrandall.com" }]
+keywords = ["usb-c", "e-marker", "usb-pd", "cable", "label", "km003c", "power-z", "ptouch", "textual", "obsidian"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: System :: Hardware",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "textual>=8,<9",
+    "pillow>=10",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+cable-station = "cable_station.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/johntrandall/cable-station"
+Repository = "https://github.com/johntrandall/cable-station"
+Issues = "https://github.com/johntrandall/cable-station/issues"
+Changelog = "https://github.com/johntrandall/cable-station/blob/main/CHANGELOG.md"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cable_station"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/cable_station", "tests", "README.md", "LICENSE", "CHANGELOG.md", "pyproject.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

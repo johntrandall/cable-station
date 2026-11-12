@@ -1,0 +1,29 @@
+USB PD Negotiation Capture
+NOW: Disconnect and reconnect your USB-C load!
+Capturing for 90 seconds... (Press Ctrl+C to stop early)
+
+[4670.652s] ** DISCONNECT **
+[4670.929s] ** CONNECT **
+[4671.054s] RAW[6]: 8F 10 01 A0 00 FF 
+[4671.054s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278231041)), []))
+[4671.055s] RAW[2]: 01 01 
+[4671.055s] SOP1: Control(GoodCRC)     (ID=0, ROLE=Source/Ufp)
+[4671.057s] RAW[22]: 8F 51 41 A0 00 FF 00 00 00 18 00 00 00 00 00 00 
+                     00 00 42 40 08 00 
+[4671.057s] SOP1: Data(VendorDefined)  (ID=0, ROLE=Source/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278231105)), [402653184, 0, 0, 540738]))
+[4671.058s] RAW[2]: 41 00 
+[4671.058s] SOP1: Control(GoodCRC)     (ID=0, ROLE=Sink/Ufp)
+[4671.060s] RAW[6]: 8F 12 02 A0 00 FF 
+[4671.060s] SOP1: Data(VendorDefined)  (ID=1, ROLE=Sink/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278231042)), []))
+[4671.061s] RAW[2]: 01 03 
+[4671.061s] SOP1: Control(GoodCRC)     (ID=1, ROLE=Source/Ufp)
+[4671.063s] RAW[6]: 8F 13 82 A0 00 FF 
+[4671.063s] SOP1: Data(VendorDefined)  (ID=1, ROLE=Source/Ufp)
+             Data: VendorDefined((Structured(VdmHeaderStructured(4278231170)), []))
+[4671.063s] RAW[2]: 41 02 
+[4671.063s] SOP1: Control(GoodCRC)     (ID=1, ROLE=Sink/Ufp)
+
+Capture complete.
