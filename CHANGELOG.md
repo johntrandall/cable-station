@@ -4,7 +4,9 @@
 
 First release. Merges two earlier codebases into one package: a Mac-side reader of cable e-markers through the port registry, and a Textual station around the POWER-Z KM003C tester.
 
-- `cable-station` (the station): modes 1 tester, 2 drive, 3 dock; preview before print; Enter, r, n, w, x, u, s keys; a highlighted table of every recorded cable.
+- `cable-station` (the station): modes 1 tester, 2 drive, 3 dock, 4 lightning; a mode bar; preview before print; Enter, r, n, w, x, u, s, c, p keys; a highlighted table of every recorded cable.
+- Thunderbolt labels TB3, TB4, and TB5 with a drawn bolt; a chip that answers with no data link reads as `PWR ONLY · no data` (data wires failed).
+- Marked BETA, untested in the title, the main box, and the README.
 - `cable-station snapshot [--json]`: every USB-C port's chip, link, and partner (macOS).
 - `cable-station decode LOG`: the cable's e-marker from a `km003c pd capture --raw` log.
 - `cable-station print ID`: reprint a recorded cable's flag.

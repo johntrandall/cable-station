@@ -53,3 +53,11 @@ def test_other_tape_widths(tmp_path):
         out = tmp_path / f"{tape}.png"
         flag.render(str(out), "USB 3.2 5G", "60W 3A", tape=tape, cable_id="C2")
         assert Image.open(out).size[1] == flag.PRINTABLE_PX[tape]
+
+
+def test_thunderbolt_bolt_is_drawn_and_stays_in_band(tmp_path):
+    out = tmp_path / "tb.png"
+    flag.render(str(out), "TB4 ⚡ 40G · USB 3.2 10G", "240W 5A EPR", tape=9, cable_id="C21", vertical_offset_mm=1.45)
+    first, last = flag.ink_rows(out)
+    margin = flag.mm(1.45) + 1
+    assert first >= margin and last <= flag.PRINTABLE_PX[9] - margin - 1

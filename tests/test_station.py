@@ -1,4 +1,5 @@
 import pytest
+import sys
 from textual.widgets import DataTable
 
 from cable_station import records
@@ -80,3 +81,25 @@ async def test_x_twice_decommissions(tmp_path):
 def test_tier():
     assert tier("no eMarker · USB 2.0 480M") == tier("USB 2.0 480M link") == "USB 2.0 480M"
     assert tier("PWR ONLY · no data") == "no data"
+
+
+@pytest.mark.asyncio
+async def test_mode_bar_and_lightning_power_only(tmp_path):
+    s = make_settings(tmp_path)
+    app = CableStation(s, start_capture=False)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        from textual.widgets import Static
+        assert "1 TESTER" in str(app.query_one("#mode", Static).render())
+        if sys.platform != "darwin":
+            return
+        await pilot.press("4")
+        await pilot.pause()
+        assert app.mode == "lightning" and app.connector == "Lightning"
+        await pilot.press("c")
+        await pilot.pause()
+        assert app.connector == "USB-A to Lightning"
+        await pilot.press("p")
+        await pilot.pause()
+        assert app.pending[0]["label_line1"] == "Lightning PWR ONLY" and app.pending[0]["label_line2"] == "2.4A"
+        await pilot.press("q")

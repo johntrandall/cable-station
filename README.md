@@ -1,5 +1,7 @@
 # cable-station
 
+**BETA, untested.** Version 0.1.0 is the first public packaging of a tool that has run on one machine; expect rough edges, and check the first few labels by hand.
+
 Read what a USB-C cable can really do, keep one note per cable, and print a small flag that says so.
 
 **Start here.** `cable-station` is a terminal program for sorting a drawer of USB-C cables. Every full-featured USB-C cable carries an **e-marker**, a chip that states the cable's ratings: how many amps it may carry, whether it supports 240 W Extended Power Range (EPR), which data speed it is wired for, and whether it is passive or active. The station reads that chip in one of two ways, records the result as a Markdown note, and prints a two-line wrap-flag label on a Brother P-touch so the answer travels with the cable. It was built around the ChargerLAB POWER-Z KM003C, a USB-C power and Power Delivery tester, and it also works with nothing but an Apple Silicon Mac.
@@ -20,7 +22,7 @@ The station shows one table: the pending reading on top, every recorded cable be
 1. **Tester path (primary).** The POWER-Z KM003C sits on USB with the cable under test seated in its socket. You run the tester's `USB-C eMarker` module (Application › Modules › USB-C eMarker); the station runs `km003c pd capture --raw` in the background, catches the cable's Discover Identity answer on the cable channel (SOP'), and decodes the ID Header and Cable VDO per the USB Power Delivery specification.
 2. **Mac path.** On macOS, the Mac's own port controller asks the cable the same question when a device is plugged in through it. `cable-station` reads the answer from the I/O Registry (`Port-USB-C@N / CC / SOP'`) together with the link that trained (USB 2, USB 3, Thunderbolt or USB4) and the device on the far end. Modes 2 (drive) and 3 (dock) watch the ports for a partner device you name in the config.
 
-A cable with no chip is, by the USB-C specification, a 3 A, 60 W, USB 2.0 cable, and the label says so. A cable that connects but never carries data is labelled `PWR ONLY · no data`.
+A cable with no chip is, by the USB-C specification, a 3 A, 60 W, USB 2.0 cable, and the label says so. A cable that connects but never carries data is labelled `PWR ONLY · no data`; when its chip still answers, the note records the claim and says the data wires failed.
 
 ## Install
 
@@ -65,7 +67,8 @@ port 3: connected True · TS5 Plus / USB3 HUB · link Thunderbolt/USB4 40 Gb/s �
 |---|---|
 | `Enter` | Preview the pending reading's flag; `Enter` again prints it with a new number and writes the note. With nothing pending, reprints the highlighted row. |
 | `r` | Reprint the highlighted cable's flag (no new note). |
-| `1` `2` `3` | Mode: `1` tester (readings come from the POWER-Z capture), `2` drive, `3` dock (the Mac reads the cable plugged between it and the named partner). |
+| `1` `2` `3` `4` | Mode: `1` tester (readings come from the POWER-Z capture), `2` drive, `3` dock (the Mac reads the cable plugged between it and the named partner), `4` lightning (an iPhone or iPad enumerating on the Mac is the reading). |
+| `c` `p` | In lightning mode: `c` cycles the other end's plug (Lightning, USB-A to Lightning, USB-C to Lightning); `p` stages a power-only Lightning cable. |
 | `n` | Stage the seated cable as chipless and untested (`no eMarker · USB 2.0 480M` over `60W 3A`); `Enter` prints it. |
 | `w` | Write the pending reading into the highlighted row, a retest that keeps the number; press `w` twice. |
 | `x` | Decommission the highlighted cable (broken or discarded); the record and number are kept; press `x` twice. `u` undoes it. |
@@ -80,7 +83,7 @@ Two lines on 9 mm tape, printed twice on one strip with a 20 mm wrap zone and a 
 
 | Line | Content | Examples |
 |---|---|---|
-| 1, data | Every mode the cable supports, highest first, separated by a middle dot, then `Active` on an active cable | `USB 2.0 480M` · `USB 3.2 5G` · `USB4 20G · USB 3.2 10G` · `USB4 ≥40G · USB 3.2 10G Active` |
+| 1, data | Every mode the cable supports, highest first, separated by a middle dot, then `Active` on an active cable; a Thunderbolt link trained on the Mac names the generation with a bolt | `USB 2.0 480M` · `USB 3.2 5G` · `USB4 20G · USB 3.2 10G` · `USB4 ≥40G · USB 3.2 10G Active` · `TB4 ⚡ 40G · USB 3.2 10G` |
 | 2, power | Watts, amps, `EPR` on 240 W cables, then the cable's number | `60W 3A · #3` · `100W 5A · #17` · `240W 5A EPR · #21` |
 | no chip | Line 1 names the fact and the tested data speed; line 2 the specification default | `no eMarker · USB 2.0 480M` / `60W 3A · #8` |
 | power only | A cable that charges but never carries data | `PWR ONLY · no data` / `60W 3A · #9` |
@@ -148,7 +151,7 @@ Partner names are matched against what macOS reports for the device on the far e
 
 ## Status
 
-Alpha. The station has labelled one household's cable drawer; the vocabulary and keys are settled, the packaging is new. Next: the direct `km003c cable` read once km003c-rs #67 lands, a power test, and the throughput test as an opt-in.
+Beta, untested beyond one machine. The station has labelled one household's cable drawer; the vocabulary and keys are settled, the packaging is new. Next: the direct `km003c cable` read once km003c-rs #67 lands, a power test, and the throughput test as an opt-in.
 
 ## Credits
 

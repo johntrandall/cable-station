@@ -4,7 +4,8 @@ One table, aligned so cables compare: the pending reading is the first row (ID "
 cable follows, and rows whose e-marker record matches the pending reading are highlighted. Keys:
   Enter   preview, then print the pending reading with a NEW number and write its note
   r       reprint the highlighted row's number (no new note)
-  1 2 3   mode: 1 tester (readings from the POWER-Z capture), 2 drive, 3 dock (the Mac reads the cable)
+  1 2 3 4 mode: 1 tester (readings from the POWER-Z capture), 2 drive, 3 dock (the Mac reads the cable),
+          4 lightning (an iPhone or iPad enumerating on the Mac is the reading; c cycles the other plug, p records power only)
   n       stage the seated cable as chipless, untested (Enter prints it)
   w       write the pending reading into the highlighted row (a retest keeps its number); w twice
   x       decommission the highlighted cable; x twice
@@ -80,20 +81,24 @@ class Printer:
 
 
 class CableStation(App):
-    TITLE = "Cable station · POWER-Z KM003C"
+    TITLE = "Cable station · POWER-Z KM003C · BETA, untested"
     CSS = """
+    #mode { height: 1; padding: 0 2; background: $accent; color: $text; text-style: bold; }
     #reading { height: auto; max-height: 12; padding: 0 1; border: round $accent; }
     #status { height: 1; padding: 0 2; color: $text-muted; }
     DataTable { height: 1fr; }
     """
     BINDINGS = [
-        Binding("enter", "print_new", "Enter: print pending as NEW #, or the highlighted row", priority=True),
-        Binding("r", "reprint", "Reprint highlighted row (↑↓ to choose)"),
+        Binding("enter", "print_new", "Enter: add reading to the database as a NEW cable + print", priority=True),
+        Binding("r", "reprint", "r: reprint the highlighted cable"),
         Binding("1", "mode_tester", "1 tester"),
         Binding("2", "mode_drive", "2 drive"),
         Binding("3", "mode_dock", "3 dock"),
+        Binding("4", "mode_lightning", "4 lightning"),
+        Binding("c", "toggle_connector", "c connector (lightning)", show=False),
+        Binding("p", "power_only", "p power only (lightning)", show=False),
         Binding("n", "no_emarker", "No chip, untested: stage"),
-        Binding("w", "write_into", "Write pending into highlighted row (w twice)"),
+        Binding("w", "write_into", "w: update the highlighted cable with this reading, keep its # (w twice)"),
         Binding("x", "decommission", "Decommission highlighted (x twice)"),
         Binding("u", "reactivate", "Undo decommission", show=False),
         Binding("s", "discard", "Discard"),
@@ -117,17 +122,20 @@ class CableStation(App):
         self.confirm_x = None
         self.confirm_w = None
         self._mac_watching = False
+        self._stop = False
         self.settings = settings
         drive = ", ".join(settings.partners.get("drive", [])) or "any device"
         dock = ", ".join(settings.partners.get("dock", [])) or "any device"
         self.MODES = {"tester": "TESTER: run the eMarker module on the POWER-Z; readings arrive from its capture",
                       "drive": f"DRIVE: plug each cable between this Mac and a drive ({drive}); the Mac reads it",
-                      "dock": f"DOCK: plug each cable between this Mac and the dock ({dock}); the Mac reads it"}
+                      "dock": f"DOCK: plug each cable between this Mac and the dock ({dock}); the Mac reads it",
+                      "lightning": "LIGHTNING: plug the Lightning end into an iPhone or iPad and the other end into the Mac or the dock; p records power only; c records the other end's plug (A or C) if you want it"}
 
     # ----- layout -----
 
     def compose(self) -> ComposeResult:
-        yield Static("waiting for a reading · seat a cable · tester: Application › Modules › USB-C eMarker · rotate the plug if asked", id="reading")
+        yield Static("", id="mode")
+        yield Static("BETA, UNTESTED · waiting for a reading · seat a cable · tester: Application › Modules › USB-C eMarker · rotate the plug if asked", id="reading")
         yield Static("", id="status")
         yield DataTable(id="cables", cursor_type="row", zebra_stripes=True)
         yield Footer()
@@ -136,6 +144,7 @@ class CableStation(App):
         self.query_one(DataTable).add_columns(*COLS)
         self.s.ensure_dirs()
         self.db.ensure_base()
+        self.show_mode()
         self.refresh_table()
         if self.start_capture:
             self.set_status("capture starting")
@@ -158,7 +167,7 @@ class CableStation(App):
     def update_title(self) -> None:
         n = len(self.db.read_all())
         state = "reading pending" if self.pending else ("tester connected" if (self.proc and self.proc.returncode is None) else "tester absent")
-        self.sub_title = f"{n} cables · mode {self.mode} · {state}"
+        self.sub_title = f"BETA, untested · {n} cables · mode {self.mode} · {state}"
 
     def refresh_table(self) -> None:
         t = self.query_one(DataTable)
@@ -292,7 +301,7 @@ class CableStation(App):
             png, desc = self.printer.render(cid, r["label_line1"], r["label_line2"], r.get("label_note", ""))
             self.printer.open_preview(png)
             self.previewed = True
-            self.query_one("#reading", Static).update(f"PREVIEW opened: {r['label_line1']} / {r['label_line2']} · #{cid[1:]}\n  {desc}\n  Enter again = print it as {cid} · s = cancel")
+            self.query_one("#reading", Static).update(f"PREVIEW opened: {r['label_line1']} / {r['label_line2']} · #{cid[1:]}\n  {desc}\n  Enter again = add {cid} to the database and print · s = cancel")
             self.set_status(f"preview of {cid}: {desc}. Enter prints, s cancels.")
             return
         self.previewed = False
@@ -335,10 +344,20 @@ class CableStation(App):
 
     # ----- the Mac path (modes 2 and 3) -----
 
+    def show_mode(self) -> None:
+        names = {"tester": "1 TESTER", "drive": "2 DRIVE", "dock": "3 DOCK", "lightning": "4 LIGHTNING"}
+        bar = "   ".join((f"[reverse] {v} [/reverse]" if k == self.mode else f" {v} ") for k, v in names.items())
+        self.query_one("#mode", Static).update(f"MODE:  {bar}      connector: {self.connector}")
+
     def set_mode(self, mode: str) -> None:
         self.mode = mode
         self.mac_seen = {}
-        self.query_one("#reading", Static).update(f"mode {self.MODES[mode]}  ·  seat or plug a cable; the reading appears here")
+        if mode == "lightning" and "Lightning" not in self.connector:
+            self.connector = "Lightning"
+        if mode != "lightning" and "Lightning" in self.connector:
+            self.connector = self.s.connector if "Lightning" not in self.s.connector else "USB-C to USB-C"
+        self.show_mode()
+        self.query_one("#reading", Static).update(f"{self.MODES[mode]}  ·  seat or plug a cable; the reading appears here")
         self.set_status(f"mode: {mode}")
         self.update_title()
         if mode != "tester" and not self._mac_watching:
@@ -357,6 +376,39 @@ class CableStation(App):
     def action_mode_dock(self) -> None:
         self.set_mode("dock")
 
+    def action_mode_lightning(self) -> None:
+        self.set_mode("lightning")
+
+    def action_toggle_connector(self) -> None:
+        if self.mode != "lightning":
+            return
+        cycle = ["Lightning", "USB-A to Lightning", "USB-C to Lightning"]
+        self.connector = cycle[(cycle.index(self.connector) + 1) % 3] if self.connector in cycle else "Lightning"
+        self.show_mode()
+        self.set_status(f"connector: {self.connector} (c toggles)")
+
+    def action_power_only(self) -> None:
+        """p: in Lightning mode, the phone charges but never appears: a power-only Lightning cable."""
+        if self.mode != "lightning":
+            return
+        rec = {"label_line1": "Lightning PWR ONLY", "label_line2": "USB-C PD" if "USB-C" in self.connector else "2.4A", "label_note": "",
+               "current": "", "epr": False, "active": False, "vendor_id": "", "product_id": "", "cable_vdo": "", "product_type": "lightning cable",
+               "speed": "none", "source": "lightning", "data_test": f"{self.connector}: the device charged but never enumerated on the Mac (operator)"}
+        self.pending = (rec, f"{datetime.datetime.now():%H:%M:%S}", 1, [])
+        self.show_pending()
+        self.set_status("Lightning power-only staged. Enter prints, s discards.")
+
+    def reading_from_ios(self, name: str, speed: str) -> None:
+        if self.mode == "lightning" and "Lightning" not in self.connector:
+            self.connector = "Lightning"
+        rec = {"label_line1": "Lightning 480M", "label_line2": "USB-C PD" if "USB-C" in self.connector else "2.4A", "label_note": "",
+               "current": "", "epr": False, "active": False, "vendor_id": "", "product_id": "", "cable_vdo": "", "product_type": "lightning cable",
+               "speed": "480M", "source": "lightning", "data_test": f"{self.connector}: {name} enumerated at {speed}"}
+        runs = self.pending[2] + 1 if (self.pending and self.pending[0].get("data_test") == rec["data_test"]) else 1
+        self.pending = (rec, f"{datetime.datetime.now():%H:%M:%S}", runs, [])
+        self.show_pending()
+        self.set_status(f"lightning: {name} at {speed} → {rec['label_line1']} / {rec['label_line2']} ({self.connector}; c sets the other end's plug). Enter prints, s discards.")
+
     def _watched(self, port: mac_reader.PortState) -> bool:
         names = (port.cio_device or "") + " " + (port.usb3_product or "") + " " + (port.usb2_product or "")
         partners = self.s.partners.get(self.mode, ())
@@ -369,14 +421,34 @@ class CableStation(App):
 
     @work(thread=True)
     def mac_watch(self) -> None:
-        """Drive and dock modes: poll the Mac's ports; a new or changed cable on the watched partner becomes the pending reading."""
+        """Drive and dock modes: poll the Mac's ports; a new or changed cable on the watched partner becomes the pending reading.
+        Lightning mode: poll the USB tree for an iPhone, iPad or iPod; its appearance is the reading."""
         import time
-        while self.mode != "tester":
+
+        def nap(seconds):
+            end = time.time() + seconds
+            while time.time() < end and not self._stop:
+                time.sleep(0.1)
+
+        while self.mode != "tester" and not self._stop:
+            if self.mode == "lightning":
+                try:
+                    devs = {k: v for k, v in mac_reader.usb_devices().items() if any(x in v[0] for x in ("iPhone", "iPad", "iPod"))}
+                except Exception:
+                    devs = {}
+                for k, v in devs.items():
+                    if self.mac_seen.get(k) != v[:2]:
+                        self.mac_seen[k] = v[:2]
+                        self.call_from_thread(self.reading_from_ios, v[0], v[1])
+                for k in [k for k in self.mac_seen if k not in devs]:
+                    self.mac_seen.pop(k)
+                nap(2)
+                continue
             try:
                 ports = mac_reader.read_ports()
             except Exception as e:
                 self.call_from_thread(self.set_status, f"Mac read failed: {e}")
-                time.sleep(3)
+                nap(3)
                 continue
             for p in ports.values():
                 if not self._watched(p):
@@ -386,16 +458,26 @@ class CableStation(App):
                 if self.mac_seen.get(p.port) != sig:
                     self.mac_seen[p.port] = sig
                     self.call_from_thread(self.reading_from_port, p)
-            time.sleep(2)
+            nap(2)
         self._mac_watching = False
 
     def reading_from_port(self, p: mac_reader.PortState) -> None:
         link_cls, link_txt = p.link()
         e = p.emarker
-        if e:
+        if e and link_cls == "none":
+            # the chip answers but no data link trained, not even USB 2.0: power and CC work, the data wires do not
+            claim1, claim2 = e.label_lines()
+            rec = {"label_line1": "PWR ONLY · no data", "label_line2": claim2, "label_note": "data wires failed", "current": f"{e.current_a}A", "epr": e.epr,
+                   "active": e.kind == "active", "vendor_id": f"0x{e.vendor_id:04X}", "product_id": f"0x{e.product_id:04X}", "cable_vdo": f"0x{e.cable_vdo:08X}",
+                   "product_type": f"{e.kind} cable", "speed": "none (chip claims " + claim1 + ")", "source": "mac",
+                   "data_test": f"Mac read on port {p.port}: chip answered on SOP' and claims {claim1} / {claim2}, but no data link trained with {p.devices() if p.devices() != 'nothing' else 'the partner'} (power and CC only): data wires failed"}
+        elif e:
             line1, line2 = e.label_lines()
-            if link_cls == "tb40" and e.speed_code < 3:
-                line1 = "TB 40G · USB 3.2 10G" + (" Active" if e.kind == "active" else "")   # Thunderbolt 3 cables carry 40G by alt mode while the USB code says 10G/20G
+            if link_cls in ("tb40", "tb20") or (p.tb_speed and "80" in p.tb_speed):
+                # Thunderbolt: TB3-era chips report a USB 10G/20G code while the link trains at 40G; USB4-generation chips are TB4; 80G is TB5 (inferred from the specifications' history)
+                gen = "TB5" if (p.tb_speed and "80" in p.tb_speed) else ("TB4" if e.speed_code >= 3 else "TB3")
+                rate = "80G" if gen == "TB5" else ("40G" if link_cls == "tb40" else "20G")
+                line1 = f"{gen} ⚡ {rate} · USB 3.2 10G" + (" Active" if e.kind == "active" else "")
             rec = {"label_line1": line1, "label_line2": line2, "label_note": "", "current": f"{e.current_a}A", "epr": e.epr, "active": e.kind == "active",
                    "vendor_id": f"0x{e.vendor_id:04X}", "product_id": f"0x{e.product_id:04X}", "cable_vdo": f"0x{e.cable_vdo:08X}",
                    "product_type": f"{e.kind} cable", "speed": line1, "source": "mac",
@@ -467,7 +549,7 @@ class CableStation(App):
             return
         if self.confirm_w != cid:
             self.confirm_w = cid
-            self.set_status(f"write this reading into {cid} and reprint its flag? press w again to confirm")
+            self.set_status(f"update {cid} with this reading (it keeps #{cid[1:]}) and reprint its flag? press w again to confirm")
             return
         self.confirm_w = None
         r = self.pending[0]
@@ -487,6 +569,9 @@ class CableStation(App):
         self._finish(None, "discarded")
 
     async def action_quit(self) -> None:
+        self._stop = True
+        self.mode = "tester"          # ends the Mac-watch thread's loop
         if self.proc and self.proc.returncode is None:
             self.proc.terminate()
+        self.workers.cancel_all()
         self.exit()

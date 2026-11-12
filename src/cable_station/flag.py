@@ -47,7 +47,7 @@ def fit_font(draw, lines, max_w, max_h):
     size = 200
     while size > 8:
         f = load_font(size)
-        widths = [draw.textbbox((0, 0), t, font=f)[2] for t in lines]
+        widths = [draw.textbbox((0, 0), t.replace("\u26a1", "MM"), font=f)[2] for t in lines]
         heights = [draw.textbbox((0, 0), t, font=f)[3] - draw.textbbox((0, 0), t, font=f)[1] for t in lines]
         if max(widths) <= max_w and sum(heights) + (len(lines) - 1) * size * 0.15 <= max_h:
             return f
@@ -73,13 +73,30 @@ def render(out, line1: str, line2: str, tape: int = 9, length: int = 70, wrap: i
         length += 10
     id_font = font  # same weight and size as the specs; the separator alone marks it
     gap = font.size * 0.08
-    boxes = [d.textbbox((0, 0), line1, font=font), d.textbbox((0, 0), line2, font=font)]
+    boxes = [d.textbbox((0, 0), line1.replace("\u26a1", "MM"), font=font), d.textbbox((0, 0), line2, font=font)]
     id_w = (d.textlength(" · ", font=font) + d.textlength(id_text[3:], font=id_font)) if id_text else 0
     total_h = sum(b[3] - b[1] for b in boxes) + gap
+
+    def draw_with_bolt(x, y_top, text, f, box):
+        """Draw text; a \u26a1 in it becomes a drawn lightning bolt (the label font has no such glyph).
+        The bolt spans exactly the text's ink height (box), so it never leaves the reachable band."""
+        parts = text.split("\u26a1")
+        for i, part in enumerate(parts):
+            if i:
+                h = box[3] - box[1]
+                w = h * 0.72
+                bx, by = x, y_top + box[1]
+                pts = [(bx + w * 0.70, by), (bx + w * 0.05, by + h * 0.58), (bx + w * 0.42, by + h * 0.58),
+                       (bx + w * 0.25, by + h), (bx + w * 0.95, by + h * 0.38), (bx + w * 0.55, by + h * 0.38), (bx + w * 0.80, by)]
+                d.polygon(pts, fill=0)
+                x += w + f.size * 0.10
+            d.text((x, y_top), part, font=f, fill=0)
+            x += d.textlength(part, font=f)
+
     for face_x in (0, W - face_w):
         y = (H - total_h) / 2
         b = boxes[0]
-        d.text((face_x + (face_w - (b[2] - b[0])) / 2 - b[0], y - b[1]), line1, font=font, fill=0)
+        draw_with_bolt(face_x + (face_w - (b[2] - b[0])) / 2 - b[0], y - b[1], line1, font, b)
         y += (b[3] - b[1]) + gap
         b = boxes[1]
         w2 = (b[2] - b[0]) + id_w
