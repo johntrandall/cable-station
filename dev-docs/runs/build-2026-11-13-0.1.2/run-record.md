@@ -8,7 +8,7 @@ started: "2026-11-13T09:38:26-0500"
 started_by: "John"
 loop: null
 folder: "dev-docs/runs/build-2026-11-13-0.1.2"
-ended: null
+ended: "2026-11-13T10:28:50-0500"
 version: "0.1.2"
 ---
 
@@ -16,3 +16,4 @@ version: "0.1.2"
 - 2026-11-13 09:39 EST, cable-station-lead-designer (lead-designer, session d8571e81): John, in chat, asked for an auto-add-and-print mode for 0.1.2 (John, 09:37 on 2026-11-13, in this session, verbatim: "there should be an "auto-add and print" mode that wait for settle, adds and prints. human only touches the labels and the cables. toggleable.")
 - 2026-11-13 09:39 EST, cable-station-lead-designer (lead-designer, session d8571e81): John, in chat, reported the label note and asked whether printing should wait for the USB link to settle (John, 09:31 on 2026-11-13, in this session, verbatim: "why is the label I just printed say "confirm the drive is on the far end". This should never go on a label. Also, should database additions or lable printing be blocked until we are sure the usb exploration has settled?")
 - 2026-11-13 09:40 EST, cable-station-lead-designer (lead-designer, session d8571e81): John, in chat, in a message that arrived mid-turn beside a tool result (so the transcript tool cannot time it; it came between his auto-mode request and this note), asked for footer tooltips, shorter footer names, and no mode keys in the footer: "rollovers should explain each menu item (which can allow for shorter names on the bottom. Also, we have duplicate modes on the bottom menu. if they appear on the top they don't need to be there."
+- 2026-11-13 10:28 EST, cable-station-lead-designer (lead-designer, session d8571e81): run end: build-2026-11-13-0.1.2 (3 checkpoints, 0 items done, 50 minutes)
