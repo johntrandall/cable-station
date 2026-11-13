@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2 (2026-11-13)
+
+- Station: a Mac reading (drive and dock modes) is not added or printed until the port has held one reading for 8 s. It shows at once, marked SETTLING with a countdown; `Enter` and `w` are refused meanwhile, and a change on the port restarts the clock. Before, only the no-link verdict waited, so a link still training to USB 3 or Thunderbolt could be printed as USB 2.
+- Station: the hedge "confirm the drive is on the far end" no longer prints on a label. A chipless power-only verdict puts the question in the status line instead; `label_note` holds only facts about the cable.
+- Station: auto mode (`a`, shown in the mode bar). On, a settled reading in drive, dock or lightning mode is added to the database and printed with no key pressed; a power-only verdict still waits for `Enter`. Off by default.
+- Station: the footer shows short names with a tooltip on hover for each key; the mode keys 1 to 4 are in the mode bar only.
+
 ## 0.1.1 (2026-11-12)
 
 - Flag: the drawn Thunderbolt bolt is clamped to the text's ink height, so no ink leaves the band the printer can reach after its vertical offset.

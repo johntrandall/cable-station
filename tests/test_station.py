@@ -1,9 +1,11 @@
 import pytest
 import sys
+from pathlib import Path
 from textual.widgets import DataTable
 
 from cable_station import records
 from cable_station.config import Settings
+from cable_station.mac_reader import PortState
 from cable_station.station import CableStation, tier
 
 
@@ -105,16 +107,78 @@ async def test_mode_bar_and_lightning_power_only(tmp_path):
         await pilot.press("q")
 
 
-def test_no_link_wait_holds_a_no_link_verdict_for_the_settle_time(tmp_path):
-    """A port with no data link is not reported until that state has stood for NO_LINK_SETTLE_S; a linked port is reported at once."""
+def test_settle_left_counts_down_per_signature_and_restarts_on_a_new_one(tmp_path):
+    """Every Mac reading settles: SETTLE_S from the first time a (port, signature) is seen, 0 after that; a new signature on the port starts its own clock."""
     app = CableStation(make_settings(tmp_path), start_capture=False)
-    sig = ("nothing", ("none", "no link"), None)
-    assert app.no_link_wait("P1", sig, "none", 1000.0) == app.NO_LINK_SETTLE_S
-    assert app.no_link_wait("P1", sig, "none", 1003.5) == app.NO_LINK_SETTLE_S - 4   # 4.5 s left, shown as whole seconds
-    assert app.no_link_wait("P1", sig, "none", 1000.0 + app.NO_LINK_SETTLE_S) is None
-    assert app.no_link_wait("P2", ("Sabrent", ("usb10", "10G"), None), "usb10", 1000.0) is None
+    none = ("nothing", ("none", "no link"), None)
+    usb2 = ("Envoy Pro FX", ("usb2", "USB2 480 Mbps"), None)
+    assert app.settle_left("P1", none, 1000.0) == app.SETTLE_S
+    assert app.settle_left("P1", none, 1003.5) == app.SETTLE_S - 3            # 4.5 s left, shown as 5
+    assert app.settle_left("P1", none, 1000.0 + app.SETTLE_S) == 0
+    assert app.settle_left("P1", usb2, 1006.0) == app.SETTLE_S                 # the link trained: a new signature, a new clock
+    assert app.settle_left("P1", usb2, 1006.0 + app.SETTLE_S) == 0
     app.mac_first = {}   # what set_mode does when the mode changes: the timers start over
-    assert app.no_link_wait("P1", sig, "none", 2000.0) == app.NO_LINK_SETTLE_S
+    assert app.settle_left("P1", none, 2000.0) == app.SETTLE_S
+
+
+def port(**kw) -> PortState:
+    return PortState(port=2, connected=True, **kw)
+
+
+@pytest.mark.asyncio
+async def test_a_provisional_reading_shows_but_cannot_be_added_or_printed(tmp_path):
+    s = make_settings(tmp_path)
+    app = CableStation(s, start_capture=False)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.mode = "drive"
+        app.reading_from_port(port(usb2_rate="480 Mbps (High Speed)", usb2_product="Envoy Pro FX"), settled=False)
+        await pilot.pause()
+        assert app.pending[0]["settled"] is False and app.query_one(DataTable).row_count == 1
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.pending is not None and records.Store(s.data_dir).read_all() == []   # refused: still settling
+        await pilot.press("w")
+        await pilot.pause()
+        assert records.Store(s.data_dir).read_all() == []
+        app.show_settling(port(usb2_rate="480 Mbps (High Speed)", usb2_product="Envoy Pro FX"), 5)
+        await pilot.pause()
+        await pilot.press("q")
+
+
+@pytest.mark.asyncio
+async def test_auto_mode_adds_and_prints_a_settled_reading_but_holds_power_only(tmp_path):
+    s = make_settings(tmp_path)
+    app = CableStation(s, start_capture=False)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.mode = "drive"
+        await pilot.press("a")
+        await pilot.pause()
+        assert app.auto is True
+        app.reading_from_port(port(usb3_rate="10 Gbps", usb3_product="Envoy Pro FX"), settled=True)
+        await pilot.pause()
+        rows = records.Store(s.data_dir).read_all()
+        assert [r["data_label"] for r in rows] == ["no eMarker · USB 3.2 10G"] and app.pending is None
+        assert rows[0]["label_note"] == ""
+        # a chipless power-only verdict: staged, not printed; the hedge is in the status line, never on the label
+        app.last_print = None   # a different cable, outside the correction window
+        app.reading_from_port(port(transports_active=["CC"]), settled=True)
+        await pilot.pause()
+        assert app.pending[0]["label_line1"] == "PWR ONLY · no data" and app.pending[0]["label_note"] == ""
+        assert len(records.Store(s.data_dir).read_all()) == 1
+        assert "far end" in Path(s.log_path).read_text()    # the status line (also logged) carries the question
+        await pilot.press("a")
+        await pilot.pause()
+        assert app.auto is False
+        await pilot.press("q")
+
+
+def test_footer_names_are_short_with_tooltips_and_no_mode_keys():
+    shown = [b for b in CableStation.BINDINGS if b.show]
+    assert {b.key for b in shown} == {"enter", "a", "r", "n", "w", "x", "s", "q"}
+    assert all(b.tooltip for b in shown) and all(len(b.description) <= 12 for b in shown)
+    assert all(not b.show for b in CableStation.BINDINGS if b.key in ("1", "2", "3", "4"))
 
 
 def test_correction_for_flags_a_port_that_changes_soon_after_a_print(tmp_path):
