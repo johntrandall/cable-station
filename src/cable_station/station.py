@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import math
 import subprocess
 import sys
 import time
@@ -83,7 +84,7 @@ class Printer:
 
 class CableStation(App):
     TITLE = "Cable station · POWER-Z KM003C · BETA, untested"
-    NO_LINK_SETTLE_S = 8        # a "no link" verdict needs this long without a link: links train within a few seconds
+    SETTLE_S = 8                # a Mac reading is settled when the port has held one signature this long: links train in stages (USB 2, then USB 3 or Thunderbolt) within a few seconds
     CORRECTION_WINDOW_S = 120   # a port that changes its reading this soon after a print probably still holds the printed cable
     CSS = """
     #mode { height: 1; padding: 0 2; background: $accent; color: $text; text-style: bold; }
@@ -91,22 +92,26 @@ class CableStation(App):
     #status { height: 1; padding: 0 2; color: $text-muted; }
     DataTable { height: 1fr; }
     """
+    # The footer shows the short name; hovering a key shows its tooltip. The mode keys 1-4 live in the mode bar, not here.
     BINDINGS = [
-        Binding("enter", "print_new", "Enter: add reading to the database as a NEW cable + print", priority=True),
-        Binding("r", "reprint", "r: reprint the highlighted cable"),
-        Binding("1", "mode_tester", "1 tester"),
-        Binding("2", "mode_drive", "2 drive"),
-        Binding("3", "mode_dock", "3 dock"),
-        Binding("4", "mode_lightning", "4 lightning"),
-        Binding("c", "toggle_connector", "c connector (lightning)", show=False),
-        Binding("p", "power_only", "p power only (lightning)", show=False),
-        Binding("n", "no_emarker", "No chip, untested: stage"),
-        Binding("w", "write_into", "w: update the highlighted cable with this reading, keep its # (w twice)"),
-        Binding("x", "decommission", "Decommission highlighted (x twice)"),
-        Binding("u", "reactivate", "Undo decommission", show=False),
-        Binding("s", "discard", "Discard"),
-        Binding("q", "quit", "Quit"),
-        Binding("ctrl+c", "quit", "Quit", show=False, priority=True),
+        Binding("enter", "print_new", "print", priority=True,
+                tooltip="Preview the pending reading's flag; Enter again adds it to the database as a NEW cable and prints. With nothing pending: reprint the highlighted row."),
+        Binding("a", "toggle_auto", "auto",
+                tooltip="Auto mode on or off. On: a settled reading in drive, dock or lightning mode is added and printed by itself; you touch only cables and labels. A power-only verdict still waits for Enter."),
+        Binding("r", "reprint", "reprint", tooltip="Reprint the highlighted cable's flag (no new record)."),
+        Binding("1", "mode_tester", "tester", show=False, tooltip="Mode 1: readings come from the POWER-Z capture."),
+        Binding("2", "mode_drive", "drive", show=False, tooltip="Mode 2: the Mac reads the cable plugged between it and the drive."),
+        Binding("3", "mode_dock", "dock", show=False, tooltip="Mode 3: the Mac reads the cable plugged between it and the dock."),
+        Binding("4", "mode_lightning", "lightning", show=False, tooltip="Mode 4: an iPhone or iPad enumerating on the Mac is the reading."),
+        Binding("c", "toggle_connector", "connector", show=False, tooltip="Lightning mode: cycle the other end's plug (Lightning, USB-A, USB-C)."),
+        Binding("p", "power_only", "power only", show=False, tooltip="Lightning mode: stage a power-only Lightning cable."),
+        Binding("n", "no_emarker", "no chip", tooltip="Stage the seated cable as chipless and untested (no eMarker · USB 2.0 480M over 60W 3A); Enter prints it."),
+        Binding("w", "write_into", "update", tooltip="Write the pending reading into the highlighted row: a retest that keeps its number, then reprint. Press w twice."),
+        Binding("x", "decommission", "retire", tooltip="Decommission the highlighted cable (broken or discarded); its record and number stay. Press x twice. u undoes it."),
+        Binding("u", "reactivate", "undo retire", show=False, tooltip="Put a decommissioned cable back in service."),
+        Binding("s", "discard", "discard", tooltip="Discard the pending reading."),
+        Binding("q", "quit", "quit", tooltip="Quit; the capture stops with the station."),
+        Binding("ctrl+c", "quit", "quit", show=False, priority=True),
     ]
 
     def __init__(self, settings: Settings, start_capture: bool = True):
@@ -118,8 +123,9 @@ class CableStation(App):
         self.start_capture = start_capture
         self.pending = None      # (record, time, runs, capture lines)
         self.mode = "tester"
-        self.mac_seen = {}
-        self.mac_first = {}      # (port, signature) -> when that no-link state was first seen (the settle timer)
+        self.auto = False        # a: auto mode adds and prints each settled reading by itself (drive, dock, lightning)
+        self.mac_seen = {}       # port -> (signature, settled) of the reading last staged from it
+        self.mac_first = {}      # (port, signature) -> when that signature was first seen (the settle timer)
         self.last_print = None   # (port, cable id, label line 1, time) of the last print that came from a Mac port
         self.last_key, self.last_mono = None, 0.0
         self.proc = None
@@ -301,6 +307,9 @@ class CableStation(App):
             self.action_reprint()
             return
         r, when, runs, lines = self.pending
+        if not r.get("settled", True):
+            self.set_status(f"port {r.get('port')} is still settling: nothing is added or printed until it has held one reading for {self.SETTLE_S} s")
+            return
         cid = self.db.next_id()
         if not self.previewed:
             png, desc = self.printer.render(cid, r["label_line1"], r["label_line2"], r.get("label_note", ""))
@@ -354,7 +363,29 @@ class CableStation(App):
     def show_mode(self) -> None:
         names = {"tester": "1 TESTER", "drive": "2 DRIVE", "dock": "3 DOCK", "lightning": "4 LIGHTNING"}
         bar = "   ".join((f"[reverse] {v} [/reverse]" if k == self.mode else f" {v} ") for k, v in names.items())
-        self.query_one("#mode", Static).update(f"MODE:  {bar}      connector: {self.connector}")
+        auto = "[reverse] AUTO ON [/reverse]" if self.auto else " AUTO off "
+        self.query_one("#mode", Static).update(f"MODE:  {bar}      connector: {self.connector}      {auto} (a)")
+
+    def action_toggle_auto(self) -> None:
+        """a: auto mode. A settled reading in drive, dock or lightning mode is added and printed without a key;
+        a power-only verdict still waits for Enter (the Mac cannot tell a dead cable from a far end not yet plugged in)."""
+        self.auto = not self.auto
+        self.show_mode()
+        note = " (tester mode: readings there still need Enter)" if self.mode == "tester" else ""
+        self.set_status(f"auto mode {'ON: settled readings are added and printed by themselves; power-only verdicts still wait for Enter' if self.auto else 'off: Enter prints'}{note}")
+        if self.auto and self.pending and self.pending[0].get("settled", True):
+            self.auto_print()
+
+    def auto_print(self) -> None:
+        """Add and print the pending reading with no preview, when auto mode allows it."""
+        r = self.pending[0] if self.pending else None
+        if not r or not self.auto or not r.get("settled", True) or r.get("source") not in ("mac", "lightning"):
+            return
+        if r["label_line1"].startswith("PWR ONLY"):
+            self.set_status(f"AUTO holds a power-only verdict: is the far end plugged in? Enter prints {r['label_line1']}, s discards")
+            return
+        self.previewed = True
+        self.action_print_new()
 
     def set_mode(self, mode: str) -> None:
         self.mode = mode
@@ -416,6 +447,7 @@ class CableStation(App):
         self.pending = (rec, f"{datetime.datetime.now():%H:%M:%S}", runs, [])
         self.show_pending()
         self.set_status(f"lightning: {name} at {speed} → {rec['label_line1']} / {rec['label_line2']} ({self.connector}; c sets the other end's plug). Enter prints, s discards.")
+        self.auto_print()
 
     def _watched(self, port: mac_reader.PortState) -> bool:
         names = (port.cio_device or "") + " " + (port.usb3_product or "") + " " + (port.usb2_product or "")
@@ -461,31 +493,38 @@ class CableStation(App):
             for p in ports.values():
                 if not self._watched(p):
                     self.mac_seen.pop(p.port, None)
-                    self.mac_first.pop(p.port, None)
+                    for k in [k for k in self.mac_first if k[0] == p.port]:
+                        self.mac_first.pop(k)
                     continue
                 sig = (p.devices(), p.link(), tuple(p.emarker.raw_vdos) if p.emarker else None)
-                if self.mac_seen.get(p.port) == sig:
+                if self.mac_seen.get(p.port) == (sig, True):
                     continue
-                left = self.no_link_wait(p.port, sig, p.link()[0], now)
-                if left is not None:
-                    self.call_from_thread(self.query_one("#reading", Static).update,
-                                          Text(f"port {p.port}: connected, NO DATA YET, please wait {left} s for the link to train before it is called power only", style="bold yellow"))
-                    self.call_from_thread(self.set_status, f"port {p.port}: no data link yet; waiting {left} s")
+                left = self.settle_left(p.port, sig, now)
+                if left:
+                    if self.mac_seen.get(p.port) != (sig, False):
+                        self.mac_seen[p.port] = (sig, False)
+                        self.call_from_thread(self.reading_from_port, p, False)
+                    self.call_from_thread(self.show_settling, p, left)
                     continue
-                self.mac_seen[p.port] = sig
-                self.call_from_thread(self.reading_from_port, p)
+                self.mac_seen[p.port] = (sig, True)
+                self.call_from_thread(self.reading_from_port, p, True)
             nap(2)
         self._mac_watching = False
 
-    def no_link_wait(self, port, sig, link_cls: str, now: float):
-        """A port with no data link may still be training. The first time a (port, signature) with no link is seen,
-        start its timer; until NO_LINK_SETTLE_S has passed, answer the whole seconds still to wait. None means report it."""
-        if link_cls != "none":
-            return None
+    def settle_left(self, port, sig, now: float) -> int:
+        """Whole seconds until the (port, signature) reading counts as settled: SETTLE_S from the first time it was seen,
+        0 once it has stood that long. A new signature on the port starts its own timer, so a link that trains in stages
+        (USB 2 first, then USB 3 or Thunderbolt) is reported, and may be printed, only in its final state."""
         first = self.mac_first.setdefault((port, sig), now)
-        if now - first < self.NO_LINK_SETTLE_S:
-            return int(self.NO_LINK_SETTLE_S - (now - first))
-        return None
+        return max(0, math.ceil(self.SETTLE_S - (now - first)))
+
+    def show_settling(self, p: mac_reader.PortState, left: int) -> None:
+        """The main box while a port's reading settles: the provisional verdict and the countdown; nothing can be printed yet."""
+        if not self.pending or self.pending[0].get("settled", True) or self.pending[0].get("port") != p.port:
+            return
+        r = self.pending[0]
+        what = "NO DATA YET: a dead cable, or the far end is not plugged in" if p.link()[0] == "none" else f"reads {r['label_line1']} / {r['label_line2']}"
+        self.query_one("#reading", Static).update(Text(f"port {p.port}: SETTLING, {left} s · {what} · the link may still be training; nothing is added or printed until it settles", style="bold yellow"))
 
     def correction_for(self, port, label_line1: str, now: float):
         """The last print came from this port within CORRECTION_WINDOW_S and the port now reads a different label:
@@ -495,7 +534,8 @@ class CableStation(App):
             return lp[1], lp[2], int(now - lp[3])
         return None
 
-    def reading_from_port(self, p: mac_reader.PortState) -> None:
+    def reading_from_port(self, p: mac_reader.PortState, settled: bool = True) -> None:
+        """Stage the port's reading. Provisional (settled False) readings show but cannot be added or printed."""
         link_cls, link_txt = p.link()
         e = p.emarker
         if e and link_cls == "none":
@@ -518,13 +558,16 @@ class CableStation(App):
                    "data_test": f"Mac read on port {p.port}: chip answered on SOP' ({', '.join(e.raw_vdos)}); link trained {link_txt} with {p.devices()}"}
         else:
             t = {"usb2": "USB 2.0 480M", "usb5": "USB 3.2 5G", "usb10": "USB 3.2 10G", "tb20": "USB4 20G", "tb40": "USB4 40G"}.get(link_cls, link_txt)
-            rec = {"label_line1": f"no eMarker · {t}" if link_cls != "none" else "PWR ONLY · no data", "label_line2": "60W 3A", "label_note": "" if link_cls != "none" else "confirm the drive is on the far end",
+            rec = {"label_line1": f"no eMarker · {t}" if link_cls != "none" else "PWR ONLY · no data", "label_line2": "60W 3A", "label_note": "",
                    "current": "3A", "epr": False, "active": False, "vendor_id": "", "product_id": "", "cable_vdo": "", "product_type": "chipless cable",
                    "speed": t, "source": "mac", "data_test": f"Mac read on port {p.port}: no chip answered on SOP'; link trained {link_txt} with {p.devices()}"}
         runs = self.pending[2] + 1 if (self.pending and self.pending[0].get("data_test") == rec["data_test"]) else 1
-        rec["port"] = p.port
+        rec["port"], rec["settled"] = p.port, settled
         self.pending = (rec, f"{datetime.datetime.now():%H:%M:%S}", runs, [])
         self.show_pending()
+        if not settled:
+            self.set_status(f"{self.mode} mode, port {p.port}: {rec['label_line1']} / {rec['label_line2']}, settling")
+            return
         corr = self.correction_for(p.port, rec["label_line1"], time.time())
         if corr:
             cid, old, ago = corr
@@ -533,7 +576,12 @@ class CableStation(App):
                 f"If it is the same cable: highlight {cid} and press w twice to fix it and reprint.", style="bold red"))
             self.set_status(f"port {p.port} changed after {cid} was printed: w to correct it, or Enter if this is a different cable")
             return
-        self.set_status(f"{self.mode} mode, port {p.port}: {rec['label_line1']} / {rec['label_line2']}. Enter prints, w writes into the highlighted row, s discards.")
+        if link_cls == "none":
+            # the hedge is for the operator, never for the label: the Mac cannot tell a dead cable from a far end not yet plugged in
+            self.set_status(f"port {p.port}: {rec['label_line1']}, nothing enumerated in {self.SETTLE_S} s. Is the far end plugged in? Enter prints it as power only, s discards.")
+        else:
+            self.set_status(f"{self.mode} mode, port {p.port}: {rec['label_line1']} / {rec['label_line2']}. Enter prints, w writes into the highlighted row, s discards.")
+        self.auto_print()
 
     # ----- the other keys -----
 
@@ -585,6 +633,9 @@ class CableStation(App):
         """w: write the pending reading into the highlighted row (a retest keeps its number), then reprint."""
         if not self.pending:
             self.set_status("nothing pending to write")
+            return
+        if not self.pending[0].get("settled", True):
+            self.set_status(f"port {self.pending[0].get('port')} is still settling: nothing is written until it has held one reading for {self.SETTLE_S} s")
             return
         cid = self._highlighted_id()
         if not cid:

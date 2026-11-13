@@ -65,15 +65,18 @@ port 3: connected True · TS5 Plus / USB3 HUB · link Thunderbolt/USB4 40 Gb/s �
 
 | Key | What it does |
 |---|---|
-| `Enter` | Preview the pending reading's flag; `Enter` again prints it with a new number and writes the note. With nothing pending, reprints the highlighted row. |
+| `Enter` | Preview the pending reading's flag; `Enter` again prints it with a new number and writes the note. With nothing pending, reprints the highlighted row. Refused while a Mac reading is still settling (below). |
+| `a` | Auto mode on or off. On, a settled reading in drive, dock or lightning mode is added and printed by itself: you touch only cables and labels. A power-only verdict still waits for `Enter`, because the Mac cannot tell a dead cable from a far end that is not plugged in yet. |
 | `r` | Reprint the highlighted cable's flag (no new note). |
-| `1` `2` `3` `4` | Mode: `1` tester (readings come from the POWER-Z capture), `2` drive, `3` dock (the Mac reads the cable plugged between it and the named partner), `4` lightning (an iPhone or iPad enumerating on the Mac is the reading). |
+| `1` `2` `3` `4` | Mode (shown in the mode bar, not the footer): `1` tester (readings come from the POWER-Z capture), `2` drive, `3` dock (the Mac reads the cable plugged between it and the named partner), `4` lightning (an iPhone or iPad enumerating on the Mac is the reading). |
 | `c` `p` | In lightning mode: `c` cycles the other end's plug (Lightning, USB-A to Lightning, USB-C to Lightning); `p` stages a power-only Lightning cable. |
 | `n` | Stage the seated cable as chipless and untested (`no eMarker · USB 2.0 480M` over `60W 3A`); `Enter` prints it. |
 | `w` | Write the pending reading into the highlighted row, a retest that keeps the number; press `w` twice. |
 | `x` | Decommission the highlighted cable (broken or discarded); the record and number are kept; press `x` twice. `u` undoes it. |
 | `s` | Discard the pending reading. |
 | `q` | Quit; the capture stops with the station. |
+
+The footer shows each key with a short name; hovering a key shows what it does.
 
 Green rows share the pending reading's chip identity (vendor, product, cable VDO): the same cable again, or an identical one. Cyan rows are chipless cables of the same speed tier, which have no identity to compare.
 
@@ -139,6 +142,8 @@ dock = ["TS5"]                              # mode 3 (CABLE_STATION_DOCK_PARTNER
 ```
 
 Partner names are matched against what macOS reports for the device on the far end of the cable. With no partners configured, modes 2 and 3 watch every port that gains a device.
+
+**Settling.** A USB-C link trains in stages: USB 2 first, then USB 3 or Thunderbolt a few seconds later, and a port with nothing on the far end looks the same as a dead cable for a while. So a Mac reading shows at once, marked SETTLING with a countdown, but nothing is added to the database or printed until the port has held one reading for 8 s; a change on the port restarts the clock. A power-only verdict (`PWR ONLY · no data`) is always staged for `Enter`, with the question in the status line (is the far end plugged in?), never on the label.
 
 ## Limits
 
