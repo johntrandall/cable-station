@@ -24,9 +24,9 @@ Done means every line below holds, with script evidence in `gate-table.md`:
 
 1. `uv run pytest -q` on the merged result: all tests pass (40 at the ready commit).
 2. `grep -rn "confirm the drive" src tests` finds nothing: the hedge is gone from the code.
-3. A provisional reading (settled False) cannot be added or printed: `tests/test_station.py::test_a_provisional_reading_shows_but_cannot_be_added_or_printed`.
-4. Auto mode adds and prints a settled reading and holds a power-only one: `tests/test_station.py::test_auto_mode_adds_and_prints_a_settled_reading_but_holds_power_only`.
-5. The footer shows exactly the keys enter, a, r, n, w, x, s, q, each with a tooltip, none of the mode keys: `tests/test_station.py::test_footer_names_are_short_with_tooltips_and_no_mode_keys`.
+3. A provisional reading (settled False) cannot be added or printed: the test `test_a_provisional_reading_shows_but_cannot_be_added_or_printed` in `tests/test_station.py`.
+4. Auto mode adds and prints a settled reading and holds a power-only one: the test `test_auto_mode_adds_and_prints_a_settled_reading_but_holds_power_only` in `tests/test_station.py`.
+5. The footer shows exactly the keys enter, a, r, n, w, x, s, q, each with a tooltip, none of the mode keys: the test `test_footer_names_are_short_with_tooltips_and_no_mode_keys` in `tests/test_station.py`.
 6. GUI looked at: `screens/settling-auto-on.png` (mode bar with AUTO ON, SETTLING line, footer) and a verdict in `gui-verdict.md` by the cold verifier.
 
 `gui: review`. `security: none` (no trust boundary is crossed: no network, no token, no listener).
