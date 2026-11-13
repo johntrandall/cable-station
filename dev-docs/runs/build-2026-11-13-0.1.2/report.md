@@ -7,3 +7,7 @@
 - Screens looked at by the builder: `screens/settling-auto-on.png` (mode bar with AUTO ON, SETTLING countdown, short footer with no mode keys). A hover screenshot did not capture the tooltip overlay; the tooltip is set on each `Binding` and checked by `test_footer_names_are_short_with_tooltips_and_no_mode_keys`.
 - Reading the builder took that the brief left open: auto mode holds a power-only verdict and the CORRECTION? case for `Enter`; tester mode never auto-prints. A card candidate if John wants auto to print power-only too.
 - Not in this build: the Homebrew formula (`Formula/`) still points at 0.1.1; it follows the release, not the landing.
+
+## Ready again (second round)
+
+The first verifier (verify-0-1-2) passed at 61f9c57 but left `gui-verdict.md` and `verifier-report.md` uncommitted, and the landing precheck refused the brief's `path::test` citations. Since then: the brief cites tests by name (ddb41af), and the verifier's two files are committed unchanged. No code changed since 3cc35d9. The second verifier re-checks the tip, commits anything it writes, and makes the verified commit on the new tip.
