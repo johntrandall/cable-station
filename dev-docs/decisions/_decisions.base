@@ -1,0 +1,48 @@
+filters:
+  and:
+    - number != null
+    - system == "cable-station"
+    - file.name != "_adr-template"
+properties:
+  file.name:
+    displayName: ADR
+  title:
+    displayName: Title
+  status:
+    displayName: Status
+  proposed_by:
+    displayName: Proposed by
+  proposed_at:
+    displayName: Proposed
+  accepted_at:
+    displayName: Accepted
+  implemented_at:
+    displayName: Implemented
+views:
+  - type: kanban
+    name: 1 · STATUS
+    groupBy:
+      property: status
+      direction: ASC
+    groupOrder:
+      - proposed
+      - accepted
+      - implemented
+      - superseded
+    order:
+      - title
+      - file.name
+      - proposed_by
+      - proposed_at
+  - type: table
+    name: 2 · ALL
+    order:
+      - file.name
+      - title
+      - status
+      - proposed_at
+      - accepted_at
+      - implemented_at
+    sort:
+      - property: number
+        direction: DESC

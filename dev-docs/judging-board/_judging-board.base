@@ -1,0 +1,33 @@
+filters:
+  and:
+    - system == "cable-station"
+    - file.inFolder(this.file.folder)
+    - '!file.name.startsWith("_")'
+properties:
+  file.name:
+    displayName: Output
+  title:
+    displayName: Title
+  build:
+    displayName: Build
+  _human_verdict:
+    displayName: Lane
+views:
+  - type: table
+    name: "1 · TO JUDGE"
+    filters:
+      and:
+        - _human_verdict == "to judge"
+    order:
+      - file.name
+      - title
+      - build
+  - type: table
+    name: "2 · ALL OUTPUTS"
+    groupBy:
+      property: _human_verdict
+      direction: ASC
+    order:
+      - file.name
+      - title
+      - build

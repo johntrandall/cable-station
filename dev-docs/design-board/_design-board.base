@@ -1,0 +1,376 @@
+filters:
+  and:
+    - type == "decision"
+    - system == "cable-station"
+    - file.name != "_design-board-template"
+    - file.name != "_substantive-template"
+    - file.name != "_design-decisions-template"
+properties:
+  file.name:
+    displayName: Decision
+  title:
+    displayName: Title
+  kind:
+    displayName: Kind
+  working_by:
+    displayName: Agent on it
+  question:
+    displayName: Question
+  topic:
+    displayName: Topic
+  topic_order:
+    displayName: Reading position
+  recommendation:
+    displayName: Recommendation
+  unblocks:
+    displayName: Unblocks
+  asked_by:
+    displayName: Asked by
+  asked_at:
+    displayName: Asked
+  status:
+    displayName: Status
+  _human_verdict:
+    displayName: Lane
+  attention_weight:
+    displayName: Attention weight
+  snooze_until:
+    displayName: Snooze until
+  previous_verdict:
+    displayName: Verdict (before the agent's move)
+  moved_at:
+    displayName: Moved by the agent
+  moved_by:
+    displayName: Moved by
+  waiting_on:
+    displayName: Waiting on
+  revisit_when:
+    displayName: Revisit when
+  human_note:
+    displayName: Note
+  human_words:
+    displayName: Human's words
+  relayed_by:
+    displayName: Relayed by
+  applied_at:
+    displayName: Applied
+  applied_how:
+    displayName: How applied
+  undo:
+    displayName: Undo
+views:
+  - type: table
+    name: 0 · ONE TOPIC AT A TIME
+    filters:
+      and:
+        - topic != ""
+        - status != "withdrawn"
+        - status != "draft"
+        - _human_verdict != "processed"
+        - _human_verdict != "moot"
+        - _human_verdict != "agents drafting"
+        - _human_verdict != "agent editing"
+        - _human_verdict != "in Track Changes"
+        - _human_verdict != "agent drafting"
+    groupBy:
+      property: topic
+      direction: ASC
+    order:
+      - file.name
+      - title
+      - topic_order
+      - _human_verdict
+      - kind
+      - attention_weight
+      - question
+      - recommendation
+      - asked_by
+    sort:
+      - property: topic_order
+        direction: ASC
+  - type: kanban
+    name: 1 · DESIGN DECISIONS
+    filters:
+      and:
+        - 'status != "applied" || (source != "chat" && source != "relay")'
+        - status != "withdrawn"
+        - status != "draft"
+        - kind != "discussion"
+        - _human_verdict != "processed"
+        - _human_verdict != "agents drafting"
+        - _human_verdict != "agent editing"
+        - _human_verdict != "in Track Changes"
+        - _human_verdict != "agent drafting"
+    groupBy:
+      property: _human_verdict
+      direction: ASC
+    groupOrder:
+      - cycle operations
+      - to do
+      - documents to review
+      - new decisions
+      - returning decisions
+      - yes, show me
+      - yes, just do it
+      - no
+      - revise proposal
+      - revise card
+      - snoozed
+      - later
+      - after POC
+      - after MVP
+      - talk
+      - done
+      - "can't"
+      - agent working
+      - agent waiting
+      - agent scheduled
+    order:
+      - title
+      - file.name
+      - kind
+      - attention_weight
+      - working_by
+      - asked_by
+      - recommendation
+      - previous_verdict
+      - moved_at
+      - waiting_on
+      - revisit_when
+      - unblocks
+      - asked_at
+  - type: kanban
+    name: 1a · QUICK CARDS
+    filters:
+      and:
+        - 'status != "applied" || (source != "chat" && source != "relay")'
+        - status != "withdrawn"
+        - status != "draft"
+        - kind != "discussion"
+        - _human_verdict != "processed"
+        - _human_verdict != "agents drafting"
+        - _human_verdict != "agent editing"
+        - _human_verdict != "in Track Changes"
+        - _human_verdict != "agent drafting"
+        - attention_weight == "quick"
+    groupBy:
+      property: _human_verdict
+      direction: ASC
+    groupOrder:
+      - to do
+      - documents to review
+      - new decisions
+      - returning decisions
+      - yes, show me
+      - yes, just do it
+      - no
+      - revise proposal
+      - revise card
+      - snoozed
+      - later
+      - after POC
+      - after MVP
+      - talk
+      - done
+      - "can't"
+      - agent working
+      - agent waiting
+      - agent scheduled
+    order:
+      - title
+      - file.name
+      - kind
+      - attention_weight
+      - working_by
+      - asked_by
+      - recommendation
+      - previous_verdict
+      - moved_at
+      - waiting_on
+      - revisit_when
+      - unblocks
+      - asked_at
+  - type: kanban
+    name: 1b · BIG CARDS
+    filters:
+      and:
+        - 'status != "applied" || (source != "chat" && source != "relay")'
+        - status != "withdrawn"
+        - status != "draft"
+        - kind != "discussion"
+        - _human_verdict != "processed"
+        - _human_verdict != "agents drafting"
+        - _human_verdict != "agent editing"
+        - _human_verdict != "in Track Changes"
+        - _human_verdict != "agent drafting"
+        - attention_weight == "big"
+    groupBy:
+      property: _human_verdict
+      direction: ASC
+    groupOrder:
+      - to do
+      - documents to review
+      - new decisions
+      - returning decisions
+      - yes, show me
+      - yes, just do it
+      - no
+      - revise proposal
+      - revise card
+      - snoozed
+      - later
+      - after POC
+      - after MVP
+      - talk
+      - done
+      - "can't"
+      - agent working
+      - agent waiting
+      - agent scheduled
+    order:
+      - title
+      - file.name
+      - kind
+      - attention_weight
+      - working_by
+      - asked_by
+      - recommendation
+      - previous_verdict
+      - moved_at
+      - waiting_on
+      - revisit_when
+      - unblocks
+      - asked_at
+  - type: table
+    name: 2 · OPEN
+    filters:
+      or:
+        - status == "open"
+        - status == "provisional"
+    order:
+      - file.name
+      - title
+      - question
+      - asked_by
+      - _human_verdict
+      - recommendation
+      - unblocks
+      - asked_at
+      - applied_how
+      - undo
+    sort:
+      - property: asked_at
+        direction: ASC
+  - type: table
+    name: 3 · ANSWERED, NOT APPLIED
+    filters:
+      and:
+        - status != "applied"
+        - status != "withdrawn"
+        - status != "draft"
+        - _human_verdict != ""
+        - _human_verdict != "agents drafting"
+        - _human_verdict != "agent editing"
+        - _human_verdict != "in Track Changes"
+        - _human_verdict != "agent drafting"
+        - _human_verdict != "documents to review"
+        - _human_verdict != "to review"
+        - _human_verdict != "new decisions"
+        - _human_verdict != "new"
+        - _human_verdict != "returning decisions"
+        - _human_verdict != "returning"
+        - _human_verdict != "snoozed"
+        - _human_verdict != "agent scheduled"
+    order:
+      - file.name
+      - title
+      - question
+      - _human_verdict
+      - previous_verdict
+      - human_note
+      - waiting_on
+      - asked_by
+  - type: table
+    name: 4 · PROCESSED
+    filters:
+      or:
+        - status == "applied"
+        - _human_verdict == "moot"
+    order:
+      - file.name
+      - title
+      - _human_verdict
+      - question
+      - previous_verdict
+      - human_words
+      - relayed_by
+      - applied_at
+      - applied_how
+    sort:
+      - property: applied_at
+        direction: DESC
+  - type: table
+    name: 5 · SCHEDULED AND WAITING
+    filters:
+      or:
+        - _human_verdict == "agent scheduled"
+        - _human_verdict == "agent waiting"
+    order:
+      - file.name
+      - title
+      - question
+      - _human_verdict
+      - revisit_when
+      - waiting_on
+      - moved_at
+      - asked_by
+  - type: kanban
+    name: 6 · DISCUSSIONS
+    filters:
+      and:
+        - status != "withdrawn"
+        - status != "draft"
+        - kind == "discussion"
+        - _human_verdict != "processed"
+        - _human_verdict != "agents drafting"
+        - _human_verdict != "agent editing"
+        - _human_verdict != "in Track Changes"
+        - _human_verdict != "agent drafting"
+    groupBy:
+      property: _human_verdict
+      direction: ASC
+    groupOrder:
+      - cycle operations
+      - to do
+      - documents to review
+      - new decisions
+      - returning decisions
+      - yes, show me
+      - yes, just do it
+      - no
+      - revise proposal
+      - revise card
+      - snoozed
+      - later
+      - after POC
+      - after MVP
+      - talk
+      - done
+      - "can't"
+      - agent working
+      - agent waiting
+      - agent scheduled
+    order:
+      - title
+      - file.name
+      - kind
+      - attention_weight
+      - working_by
+      - asked_by
+      - recommendation
+      - previous_verdict
+      - moved_at
+      - waiting_on
+      - revisit_when
+      - unblocks
+      - asked_at
