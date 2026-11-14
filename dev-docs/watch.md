@@ -1,0 +1,1 @@
+- 2026-11-13 19:18 EST, cable-station-lead-designer (lead-designer, session d8571e81): John, in chat, approved 0.1.3 (debounce shorter than 60 s, dropout logging, release script), the push, and deploying after tests (John, 19:17 on 2026-11-13, in this session, verbatim: "60s is too long, but yes, the dropout is a problem. Go, and push, and deploy after testing")
