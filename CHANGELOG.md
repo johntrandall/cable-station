@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3 (2026-11-13)
+
+- Station, tape guard: the same flag again within 10 s, or more than three prints in 30 s, is held; pressing the same key again prints anyway. Auto mode never overrides a hold, and never prints the same label twice in a row from one port: that is a reprint (`r`) or a discard (`s`), not a new cable.
+- Station, dropouts: every port's partner is watched. A partner that vanishes within 60 s of appearing is a cable swap and is only logged; one that vanishes after being up longer is a DROPOUT, said in the main box and written into the notes of the cable printed from that port, so a cable that drops a drive leaves a trail.
+- `scripts/release.sh`: the release in one command after a landing (version check, suite, tag, push, reinstall of the `uv tool` copy), so the station John runs is always the landed one.
+
 ## 0.1.2 (2026-11-13)
 
 - Station: a Mac reading (drive and dock modes) is not added or printed until the port has held one reading for 8 s. It shows at once, marked SETTLING with a countdown; `Enter` and `w` are refused meanwhile, and a change on the port restarts the clock. Before, only the no-link verdict waited, so a link still training to USB 3 or Thunderbolt could be printed as USB 2.

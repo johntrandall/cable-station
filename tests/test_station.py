@@ -189,3 +189,71 @@ def test_correction_for_flags_a_port_that_changes_soon_after_a_print(tmp_path):
     assert app.correction_for("P1", "PWR ONLY · no data", 130.0) is None       # same label: nothing to correct
     assert app.correction_for("P2", "USB4 40G", 130.0) is None                 # another port
     assert app.correction_for("P1", "USB4 40G", 100.0 + app.CORRECTION_WINDOW_S) is None
+
+
+def test_print_guard_holds_a_repeat_and_a_burst(tmp_path):
+    """The same flag within REPEAT_GUARD_S, or more than BURST_N prints in BURST_S, is a reason to wait; otherwise None."""
+    app = CableStation(make_settings(tmp_path), start_capture=False)
+    assert app.print_guard("USB4 40G", "100W 5A", "C3", 1000.0) is None
+    app.last_label = ("USB4 40G", "100W 5A", "C3", 1000.0)
+    assert "same flag" in app.print_guard("USB4 40G", "100W 5A", "C3", 1005.0)
+    assert app.print_guard("USB4 40G", "100W 5A", "C3", 1000.0 + app.REPEAT_GUARD_S) is None
+    assert app.print_guard("USB4 40G", "100W 5A", "C4", 1005.0) is None            # another id: not a repeat
+    app.prints = [1001.0, 1010.0, 1020.0]
+    assert "flags printed" in app.print_guard("USB 3.2 10G", "60W 3A", "C9", 1025.0)
+    assert app.print_guard("USB 3.2 10G", "60W 3A", "C9", 1001.0 + app.BURST_S + 0.1) is None
+
+
+@pytest.mark.asyncio
+async def test_a_held_print_needs_a_second_press_and_auto_never_overrides(tmp_path):
+    s = make_settings(tmp_path)
+    app = CableStation(s, start_capture=False)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.mode = "drive"
+        app.reading_from_port(port(usb3_rate="10 Gbps", usb3_product="Envoy Pro FX"), settled=True)
+        await pilot.pause()
+        await pilot.press("enter"); await pilot.pause()    # preview
+        await pilot.press("enter"); await pilot.pause()    # print C1
+        assert [r["id"] for r in records.Store(s.data_dir).read_all()] == ["C1"]
+        # r on C1 at once: held, then printed on the second r
+        await pilot.press("r"); await pilot.pause()
+        assert app.confirm_print == "r"
+        await pilot.press("r"); await pilot.pause()
+        assert app.confirm_print is None and len(app.prints) == 2
+        # auto mode: the same reading again on the same port is held, never printed
+        app.last_print = None
+        await pilot.press("a"); await pilot.pause()
+        app.reading_from_port(port(usb3_rate="10 Gbps", usb3_product="Envoy Pro FX"), settled=True)
+        await pilot.pause()
+        assert app.pending is not None and len(records.Store(s.data_dir).read_all()) == 1
+        assert "AUTO holds" in Path(s.log_path).read_text()
+        await pilot.press("q")
+
+
+@pytest.mark.asyncio
+async def test_a_dropout_is_written_into_the_printed_cable_and_a_swap_is_only_logged(tmp_path):
+    s = make_settings(tmp_path)
+    app = CableStation(s, start_capture=False)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.mode = "drive"
+        app.port_printed[2] = ("C7", "no eMarker · USB 2.0 480M", 100.0)
+        app.db.write(records.no_emarker_row("C7", "USB-C to USB-C", "Mac read: test"))
+        live = port(usb2_rate="480 Mbps", usb2_product="Envoy Pro FX")
+        gone = PortState(port=2, connected=False)
+        assert app.watch_partner(live, 1000.0) is None
+        assert app.watch_partner(live, 1005.0) is None           # still up: nothing to report
+        ev = app.watch_partner(gone, 1010.0)                     # 10 s up: a swap
+        assert ev == (2, "Envoy Pro FX", 10.0)
+        app.port_gone(*ev)
+        await pilot.pause()
+        assert "DROPOUT" not in (app.db.get("C7") or {}).get("notes", "") and 2 in app.port_printed
+        assert app.watch_partner(gone, 1012.0) is None           # reported once
+        app.watch_partner(live, 2000.0)
+        app.port_gone(*app.watch_partner(gone, 2000.0 + app.DROPOUT_MIN_S + 5))
+        await pilot.pause()
+        assert "DROPOUT" in app.db.get("C7")["notes"] and "Envoy Pro FX" in app.db.get("C7")["notes"]
+        assert 2 not in app.port_printed
+        assert "DROPOUT port 2" in Path(s.log_path).read_text()
+        await pilot.press("q")
