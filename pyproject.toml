@@ -1,6 +1,6 @@
 [project]
 name = "cable-station"
-version = "0.1.2"
+version = "0.1.3"
 description = "BETA, untested: read USB-C cable e-markers with a POWER-Z KM003C tester or a Mac, keep one Markdown note per cable, and print a wrap-flag label for each"
 readme = "README.md"
 requires-python = ">=3.11"

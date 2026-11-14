@@ -78,6 +78,10 @@ port 3: connected True · TS5 Plus / USB3 HUB · link Thunderbolt/USB4 40 Gb/s �
 
 The footer shows each key with a short name; hovering a key shows what it does.
 
+**Tape guard.** The same flag again within 10 s, or more than three prints in 30 s, is held with the reason in the status line; press the same key again to print anyway (`w` keeps its own two-press confirm instead). Auto mode never overrides a hold, and never prints the same label twice in a row from one port.
+
+**Dropouts.** A port whose partner vanishes within 60 s of appearing is a cable swap (logged only). One that vanishes after being up longer is a DROPOUT: the main box says so, and the cable last printed from that port gets a `DROPOUT <time>: <device> vanished after <n> s` line in its notes. A cable that drops a drive is a bad cable; `x` retires it.
+
 Green rows share the pending reading's chip identity (vendor, product, cable VDO): the same cable again, or an identical one. Cyan rows are chipless cables of the same speed tier, which have no identity to compare.
 
 ## The label
@@ -164,6 +168,10 @@ Beta, untested beyond one machine. The station has labelled one household's cabl
 - [okhsunrog/km003c-rs](https://github.com/okhsunrog/km003c-rs) (MIT or Apache-2.0), the open-source driver and CLI for the tester, and [okhsunrog/km003c-protocol-research](https://github.com/okhsunrog/km003c-protocol-research), the protocol reference.
 - [ptouch-label](https://github.com/johntrandall/ptouch-label), the P-touch printing tool.
 - [Textual](https://textual.textualize.io/) for the terminal interface and [Pillow](https://python-pillow.org/) for the flag renderer.
+
+## Releasing
+
+After a change lands on `main`: `scripts/release.sh`. It checks the version is the same in `pyproject.toml`, `src/cable_station/__init__.py` and the top of `CHANGELOG.md`, runs the suite, tags `v<version>`, pushes `main` and the tag, and reinstalls the `uv tool` copy so `cable-station --version` is the landed one. `scripts/release.sh --check` runs the checks alone. The Homebrew formula under `Formula/` is a draft that is not in the tap yet; it is not part of the release.
 
 ## Contributing
 

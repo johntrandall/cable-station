@@ -41,7 +41,7 @@ def test_cli_version(capsys):
         cli.main(["--version"])
     except SystemExit as e:
         assert e.code == 0
-    assert "cable-station 0.1.2" in capsys.readouterr().out
+    assert "cable-station 0.1.3" in capsys.readouterr().out
 
 
 def test_cli_print_render_only(capsys, tmp_path, monkeypatch):

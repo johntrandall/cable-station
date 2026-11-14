@@ -86,6 +86,9 @@ class CableStation(App):
     TITLE = "Cable station · POWER-Z KM003C · BETA, untested"
     SETTLE_S = 8                # a Mac reading is settled when the port has held one signature this long: links train in stages (USB 2, then USB 3 or Thunderbolt) within a few seconds
     CORRECTION_WINDOW_S = 120   # a port that changes its reading this soon after a print probably still holds the printed cable
+    REPEAT_GUARD_S = 10         # the same flag again within this many seconds needs a second press (tape guard)
+    BURST_N, BURST_S = 3, 30    # more than BURST_N prints in BURST_S seconds needs a second press (tape guard)
+    DROPOUT_MIN_S = 60          # a partner that vanishes after being up this long is a dropout, not a cable swap
     CSS = """
     #mode { height: 1; padding: 0 2; background: $accent; color: $text; text-style: bold; }
     #reading { height: auto; max-height: 12; padding: 0 1; border: round $accent; }
@@ -127,12 +130,18 @@ class CableStation(App):
         self.mac_seen = {}       # port -> (signature, settled) of the reading last staged from it
         self.mac_first = {}      # (port, signature) -> when that signature was first seen (the settle timer)
         self.last_print = None   # (port, cable id, label line 1, time) of the last print that came from a Mac port
+        self.prints = []         # times of every print this session (the burst guard)
+        self.last_label = None   # (line1, line2, cid, time) of the last flag printed (the repeat guard)
+        self.confirm_print = None  # the key whose second press overrides a print guard
+        self.port_printed = {}   # port -> (cable id, label line 1, time): the cable believed to be on that port since its print
+        self.port_live = {}      # port -> (devices, since): a port whose partner is up, for the dropout watch
         self.last_key, self.last_mono = None, 0.0
         self.proc = None
         self.previewed = False
         self.confirm_x = None
         self.confirm_w = None
         self._mac_watching = False
+        self._auto_printing = False
         self._stop = False
         self.settings = settings
         drive = ", ".join(settings.partners.get("drive", [])) or "any device"
@@ -302,6 +311,40 @@ class CableStation(App):
         self.query_one("#reading", Static).update(f"{msg}  ·  next cable: seat it and run the eMarker module")
         self.refresh_table()
 
+    def print_guard(self, line1: str, line2: str, cid: str, now: float | None = None) -> str | None:
+        """Why a print should wait, or None. The same flag again within REPEAT_GUARD_S, or more than BURST_N prints
+        in BURST_S seconds, is how tape gets burned; a second press of the same key overrides, auto mode never does."""
+        now = time.time() if now is None else now
+        if self.last_label and self.last_label[:3] == (line1, line2, cid) and now - self.last_label[3] < self.REPEAT_GUARD_S:
+            return f"the same flag ({cid}: {line1}) was printed {int(now - self.last_label[3])} s ago"
+        recent = [t for t in self.prints if now - t < self.BURST_S]
+        if len(recent) >= self.BURST_N:
+            return f"{len(recent)} flags printed in the last {self.BURST_S} s"
+        return None
+
+    def print_allowed(self, key: str, line1: str, line2: str, cid: str, auto: bool = False) -> bool:
+        reason = self.print_guard(line1, line2, cid)
+        if reason is None:
+            return True
+        if auto:
+            self.set_status(f"AUTO holds: {reason}. Enter or r prints it by hand, s discards.")
+            return False
+        if self.confirm_print == key:
+            self.confirm_print = None
+            return True
+        self.confirm_print = key
+        self.set_status(f"HELD: {reason}. Press {key} again to print anyway, s to discard.")
+        return False
+
+    def note_print(self, cid: str, line1: str, line2: str, port=None) -> None:
+        """Remember a print for the guards, the correction window and the dropout watch."""
+        now = time.time()
+        self.prints.append(now)
+        self.last_label = (line1, line2, cid, now)
+        if port is not None:
+            self.last_print = (port, cid, line1, now)
+            self.port_printed[port] = (cid, line1, now)
+
     def action_print_new(self) -> None:
         if not self.pending:
             self.action_reprint()
@@ -317,6 +360,8 @@ class CableStation(App):
             self.previewed = True
             self.query_one("#reading", Static).update(f"PREVIEW opened: {r['label_line1']} / {r['label_line2']} · #{cid[1:]}\n  {desc}\n  Enter again = add {cid} to the database and print · s = cancel")
             self.set_status(f"preview of {cid}: {desc}. Enter prints, s cancels.")
+            return
+        if not self.print_allowed("enter", r["label_line1"], r["label_line2"], cid, auto=self._auto_printing):
             return
         self.previewed = False
         if r.get("cable_vdo"):
@@ -339,8 +384,7 @@ class CableStation(App):
         if lines:
             (self.s.captures_dir / f"emarker-{cid}.log").write_text("".join(lines))
         self.set_status(f"[{cid}] PRINTED {r['label_line1']} / {r['label_line2']} · #{cid[1:]}   {self.printer.print(cid, r['label_line1'], r['label_line2'], r.get('label_note', ''))}")
-        if r.get("port") is not None:
-            self.last_print = (r["port"], cid, r["label_line1"], time.time())
+        self.note_print(cid, r["label_line1"], r["label_line2"], r.get("port"))
         self._finish(cid, f"printed as {cid}")
 
     def action_reprint(self) -> None:
@@ -353,9 +397,12 @@ class CableStation(App):
             self.set_status("select a recorded row to reprint, or Enter to print the new reading")
             return
         line1, line2 = str(row[1]), str(row[2])
+        if not self.print_allowed("r", line1, line2, cid):
+            return
         rec = self.db.get(cid) or {}
         note = rec.get("label_note", "")
         self.set_status(f"[{cid}] REPRINTED {line1} / {line2} · #{cid[1:]}   {self.printer.print(cid, line1, line2, note)}")
+        self.note_print(cid, line1, line2)
         self._finish(cid, f"reprinted {cid}")
 
     # ----- the Mac path (modes 2 and 3) -----
@@ -384,8 +431,16 @@ class CableStation(App):
         if r["label_line1"].startswith("PWR ONLY"):
             self.set_status(f"AUTO holds a power-only verdict: is the far end plugged in? Enter prints {r['label_line1']}, s discards")
             return
+        prev = self.port_printed.get(r.get("port"))
+        if prev and prev[1] == r["label_line1"]:
+            self.set_status(f"AUTO holds: port {r.get('port')} reads the same as {prev[0]}, printed from it {int(time.time() - prev[2])} s ago. Same cable: s discards, r reprints. Another cable: Enter prints.")
+            return
         self.previewed = True
-        self.action_print_new()
+        self._auto_printing = True
+        try:
+            self.action_print_new()
+        finally:
+            self._auto_printing = False
 
     def set_mode(self, mode: str) -> None:
         self.mode = mode
@@ -491,6 +546,9 @@ class CableStation(App):
                 continue
             now = time.time()
             for p in ports.values():
+                gone = self.watch_partner(p, now)
+                if gone:
+                    self.call_from_thread(self.port_gone, *gone)
                 if not self._watched(p):
                     self.mac_seen.pop(p.port, None)
                     for k in [k for k in self.mac_first if k[0] == p.port]:
@@ -510,6 +568,36 @@ class CableStation(App):
                 self.call_from_thread(self.reading_from_port, p, True)
             nap(2)
         self._mac_watching = False
+
+    def watch_partner(self, p: mac_reader.PortState, now: float):
+        """Track whether a port's partner is up. Returns (port, devices, seconds up) the moment a partner vanishes, else None."""
+        devs = p.devices() if p.connected else "nothing"
+        live = self.port_live.get(p.port)
+        if devs != "nothing":
+            if not live or live[0] != devs:
+                self.port_live[p.port] = (devs, now)
+            return None
+        if live:
+            self.port_live.pop(p.port, None)
+            return p.port, live[0], now - live[1]
+        return None
+
+    def port_gone(self, port, devs: str, after: float) -> None:
+        """A port's partner vanished after `after` seconds. Within DROPOUT_MIN_S it is a cable swap and only logged;
+        longer, it is a DROPOUT: said in the main box, and written into the record of the cable printed from that port."""
+        if after < self.DROPOUT_MIN_S:
+            self.log_line(f"port {port}: {devs} gone after {after:.0f} s (a swap)")
+            return
+        printed = self.port_printed.pop(port, None)
+        who = f"{printed[0]} ({printed[1]}), printed from this port {int(time.time() - printed[2])} s ago" if printed else "no cable printed from this port this session"
+        stamp = f"{datetime.datetime.now():%Y-%m-%d %H:%M}"
+        if printed and self.db.get(printed[0]):
+            rec = self.db.get(printed[0])
+            self.db.update(printed[0], {"notes": f"{rec.get('notes', '')} · DROPOUT {stamp}: {devs} vanished after {after:.0f} s on port {port}".strip(" ·")})
+            self.refresh_table()
+        self.query_one("#reading", Static).update(Text(
+            f"DROPOUT port {port}: {devs} vanished after {after:.0f} s up (not a swap). Cable: {who}. A cable that drops a drive is a bad cable: x retires it.", style="bold red"))
+        self.set_status(f"DROPOUT port {port}: {devs} vanished after {after:.0f} s; {who}")
 
     def settle_left(self, port, sig, now: float) -> int:
         """Whole seconds until the (port, signature) reading counts as settled: SETTLE_S from the first time it was seen,
@@ -569,6 +657,8 @@ class CableStation(App):
             self.set_status(f"{self.mode} mode, port {p.port}: {rec['label_line1']} / {rec['label_line2']}, settling")
             return
         corr = self.correction_for(p.port, rec["label_line1"], time.time())
+        if not corr and (pp := self.port_printed.get(p.port)) and pp[1] != rec["label_line1"]:
+            self.port_printed.pop(p.port, None)   # another cable is on the port now
         if corr:
             cid, old, ago = corr
             self.query_one("#reading", Static).update(Text(
@@ -590,6 +680,8 @@ class CableStation(App):
             self.confirm_x = None
         if event.key != "w":
             self.confirm_w = None
+        if event.key != self.confirm_print:
+            self.confirm_print = None
 
     def action_no_emarker(self) -> None:
         """Stage a chipless, untested cable as the pending reading; Enter prints it (never prints by itself)."""
@@ -656,6 +748,7 @@ class CableStation(App):
             fields.update({"emarker": False, "emarker_read": True, "current_a": "3", "epr": False, "vendor": "", "product": "", "cable_vdo": ""})
         self.db.update(cid, fields)
         self.set_status(f"[{cid}] UPDATED and REPRINTED {r['label_line1']} / {r['label_line2']} · #{cid[1:]}   {self.printer.print(cid, r['label_line1'], r['label_line2'], r.get('label_note', ''))}")
+        self.note_print(cid, r["label_line1"], r["label_line2"], r.get("port"))
         self._finish(cid, f"{cid} updated with the new reading")
 
     def action_discard(self) -> None:
