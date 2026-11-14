@@ -2,7 +2,7 @@
 
 ## 0.1.3 (2026-11-13)
 
-- Station, tape guard: the same flag again within 10 s, or more than three prints in 30 s, is held; pressing the same key again prints anyway. Auto mode never overrides a hold, and never prints the same label twice in a row from one port: that is a reprint (`r`) or a discard (`s`), not a new cable.
+- Station, tape guard: the same flag again within 10 s, or more than three prints in 30 s, is held; pressing the same key again prints anyway (`w`, update and reprint, keeps its own two-press confirm instead). Auto mode never overrides a hold, and never prints the same label twice in a row from one port: that is a reprint (`r`) or a discard (`s`), not a new cable.
 - Station, dropouts: every port's partner is watched. A partner that vanishes within 60 s of appearing is a cable swap and is only logged; one that vanishes after being up longer is a DROPOUT, said in the main box and written into the notes of the cable printed from that port, so a cable that drops a drive leaves a trail.
 - `scripts/release.sh`: the release in one command after a landing (version check, suite, tag, push, reinstall of the `uv tool` copy), so the station John runs is always the landed one.
 

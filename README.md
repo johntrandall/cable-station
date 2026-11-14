@@ -78,7 +78,7 @@ port 3: connected True · TS5 Plus / USB3 HUB · link Thunderbolt/USB4 40 Gb/s �
 
 The footer shows each key with a short name; hovering a key shows what it does.
 
-**Tape guard.** The same flag again within 10 s, or more than three prints in 30 s, is held with the reason in the status line; press the same key again to print anyway. Auto mode never overrides a hold, and never prints the same label twice in a row from one port.
+**Tape guard.** The same flag again within 10 s, or more than three prints in 30 s, is held with the reason in the status line; press the same key again to print anyway (`w` keeps its own two-press confirm instead). Auto mode never overrides a hold, and never prints the same label twice in a row from one port.
 
 **Dropouts.** A port whose partner vanishes within 60 s of appearing is a cable swap (logged only). One that vanishes after being up longer is a DROPOUT: the main box says so, and the cable last printed from that port gets a `DROPOUT <time>: <device> vanished after <n> s` line in its notes. A cable that drops a drive is a bad cable; `x` retires it.
 

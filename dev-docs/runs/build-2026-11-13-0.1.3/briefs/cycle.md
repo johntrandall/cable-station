@@ -10,7 +10,7 @@
 
 ## What is built
 
-1. **Tape guard** (`print_guard`, `print_allowed`, `note_print`): the same flag (text and id) within `REPEAT_GUARD_S` = 10 s, or `BURST_N` = 3 or more prints in `BURST_S` = 30 s, holds the print with the reason in the status line; a second press of the same key (`Enter`, `r`, `w`) prints anyway; auto mode never overrides. Auto mode also holds when the port reads the same label as the cable last printed from it.
+1. **Tape guard** (`print_guard`, `print_allowed`, `note_print`): the same flag (text and id) within `REPEAT_GUARD_S` = 10 s, or `BURST_N` = 3 or more prints in `BURST_S` = 30 s, holds the print with the reason in the status line; a second press of the same key (`Enter`, `r`) prints anyway; `w` keeps its own two-press confirm and is not behind the guard; auto mode never overrides. Auto mode also holds when the port reads the same label as the cable last printed from it.
 2. **Dropouts** (`watch_partner`, `port_gone`): every port's partner is tracked; a partner gone within `DROPOUT_MIN_S` = 60 s of appearing is a swap (logged only); longer is a DROPOUT: a red main-box line, a status line, and a `DROPOUT <time>: <device> vanished after <n> s on port N` note on the cable last printed from that port (`port_printed`, cleared when a different label settles on the port).
 3. **`scripts/release.sh`**: version consistency (pyproject, `__init__`, CHANGELOG top), clean main, suite, tag `v<version>`, push main and tag, `uv tool install --reinstall --force .`, and a check that `cable-station --version` is the released one. `--check` stops after the suite.
 4. README (tape guard, dropouts, Releasing), CHANGELOG 0.1.3, version 0.1.3, `uv.lock`.
